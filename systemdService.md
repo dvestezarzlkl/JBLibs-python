@@ -4,6 +4,8 @@
 
 Tento Python skript poskytuje nástroje pro správu `systemd` služeb a časovačů na systémech Linux. Pomocí těchto nástrojů můžete snadno vytvářet, spouštět, zastavovat, povolovat nebo zakazovat systémové jednotky (services) a časovače (timers). Celý skript je navržen tak, aby umožnil efektivní manipulaci s jednotkami `systemd` přímo z Pythonu.
 
+generováno pomocí *ChatGPT 4o Canvas'
+
 ## Strom tříd
 
 - `c_unitsRetRow`: Třída pro reprezentaci řádku z výsledků `systemctl list-units`.
