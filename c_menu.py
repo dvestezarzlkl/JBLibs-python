@@ -405,7 +405,8 @@ class c_menu:
             charObal (str): Znak ohraničení:  
                 - pokud je prázdný řetězec `""`, ohraničení se nezobrazí
                 - Pokud se jako znak ohraničení použije `'|'`, vytiskne se horní a dolní řádek znakem `'-'`, pouze tam kde je text mezi ohraničeními.
-            leftRightLength (int): Počet znaků charObal na levé a pravé straně
+            leftRightLength (int): Počet znaků charObal na levé a pravé straně, pokud nula tak je vynechán
+                min 0 max 10
             charSubtitle (str): Znak odsazení pro podtitulek, může být "" jinak se použije jako prefix + mezera
             eof (bool): True pokud se má přidat prázdný řádek na konec
             space_between_texts (int): Počet mezer mezi levým a pravým textem u tuple položek, výchozí je 3
@@ -417,23 +418,39 @@ class c_menu:
             outToList (list): Pokud je uveden, tak se výstup vytiskne/přidá do tohoto listu místo na obrazovku
             
         Returns:
-            int: délka nejdelšího řádku
+            int: délka nejdelšího řádku, vnější rozměr
         
         """
+        obalW=0
         out=[]
         ## Předzpracování položek
         # Převod všech položek na konzistentní formát a odstranění CR/LF
+        if not isinstance(charObal, str):
+            charObal = ""
         if charObal:
-            charObal = str(charObal)
+            charObal = charObal[0]
             obal = True
         else:
             charObal = ""
+            leftRightLength = 0
+            obal = False
+        if not isinstance(leftRightLength, int):
+            leftRightLength = 0
+            charObal = ""
+        leftRightLength = constrain(leftRightLength, 0, 10)
+        if leftRightLength:
+            obalW+=leftRightLength*2+2 # 2 = mezera zleva a zprava
+        else:
+            charObal=""
             obal = False
 
-        width=min_width-2 # 2 = mezera zleva a zprava
+        width=min_width-obalW # odešteme mezery zleva a zprava a obal, tím máme místo na text menu
+        if width<0:
+            width=0
+            
         processed_subTitle_items = c_menu.processList(
             subTitle_items,
-            onlyOneColumn=True,
+            onlyOneColumn=False,
             linePrefix=charSubtitle+" ",
             minWidth=width,
             rightTxBrackets=rightTxBrackets
@@ -453,7 +470,7 @@ class c_menu:
         # ještě jendou zpracujeme subTitle_items, protože se může změnit šířka
         processed_subTitle_items = c_menu.processList(
             subTitle_items,
-            onlyOneColumn=True,
+            onlyOneColumn=False,
             linePrefix=charSubtitle+" ",
             minWidth=width,
             rightTxBrackets=rightTxBrackets
@@ -472,6 +489,7 @@ class c_menu:
         h_Obal = charObal * leftRightLength
 
         if obal:
+            # spacer by měl být = width+obalW
             spacer = f"{h_Obal}{spacer}{h_Obal}"
         
         if obal:
@@ -497,12 +515,53 @@ class c_menu:
         else:
             print("\n".join(out))
         
-        width = max(width, len(spacer))
+        width = max(width, width+obalW)
         return width
 
-    def __print(self, lastRet: onSelReturn = None, toOut:list=None) -> int:
-        width=0
+    def _print_getMenuList(self,menu_list:List[c_menu_item],width:int)->list:
+        """interní funkce, vrátí list pro  tisk menu položek
+
+        Parameters:
+            menu_list (list): seznam položek menu z funkce __getList
+            width (int): šířka menu
+
+        Returns:
+            list: list of tuples pro tisk menu, tzn pro vstup do printBlok
+        """
+        # zjistíme maximální délku choice
+        max_l_LenChoices=0
+        for item in menu_list:
+            if not item.hidden and item.choice:
+                if item.enabled:
+                    max_l_LenChoices=max(max_l_LenChoices,len(item.choice))
+                else:
+                    max_l_LenChoices=max(max_l_LenChoices,len(TXT_DISABLED))
+        # vytvoříme menu
+        ch=[]
+        for item in menu_list:
+            if not item.hidden:
+                lbl=item.label
+                chcs=item.choice
+                if not item.enabled:
+                    chcs = TXT_DISABLED
+                chcs=chcs.ljust(max_l_LenChoices)
+                chcs+= " - " if item.choice else "   "
+                if len(str(lbl).strip())==0:
+                    chcs = ""
+                    lbl = ""
+                elif lbl in _lineCharList:
+                    chcs = ""
+                    lbl = lbl * (width-2) # -2 mezery uvnitř obalu
+                    
+                sel="  "
+                if self._selectedItem==item:
+                    sel=chr(0x25B6)+" " # černá šipka doprava
+                
+                ch.append( [f"{sel}{chcs}{lbl}",item.atRight] )
+        return ch
         
+
+    def __print(self, lastRet: onSelReturn = None, toOut:list=None) -> int:        
         afterTitle=self.afterTitle
         if not isinstance(afterTitle,str):
             afterTitle=""        
@@ -512,63 +571,46 @@ class c_menu:
         if not isinstance(afterMenu,str):
             afterMenu=""
         afterMenu=afterMenu.splitlines()
+            
+        # vygenerujeme menu položky voleb
+        menu_list = self.__getList()
+        x=self.checkItemChoice(menu_list)
+        if x:
+            raise ValueError(TXT_RPT_CHCS+": "+', '.join(x))
+        
+        # ošetříme before a after
+        if not self.title:
+            tt=[]
+        else:
+            tt = self.title
+            if isinstance(tt, str):
+                tt = tt.splitlines()
+            elif not isinstance(tt, (list,tuple)):
+                tt = ["ERROR"]
+            
+        if not self.subTitle:
+            st=[]
+        else:
+            st=self.subTitle
+            if isinstance(self.subTitle, str):                    
+                st = self.subTitle.splitlines()
+            elif not isinstance(self.subTitle, (list,tuple)):
+                st = ["ERROR"]
         
         out=[]
+        width=0
         # dva průchody, výpočetní a zobrazení
         for step in range(2):        
             out=[]
+                  
+            # záhlaví menu  
+            width = max(width, self.printBlok(tt, st, "|", 3, "-", True, min_width=width, outToList=out) )
 
-            menu_list = self.__getList()
-            x=self.checkItemChoice(menu_list)
-            if x:
-                raise ValueError(TXT_RPT_CHCS+": "+', '.join(x))
-
-            if not self.title:
-                tt=[]
-            else:
-                tt = self.title.splitlines()
-            if not self.subTitle:
-                st=[]
-            else:
-                st = self.subTitle.splitlines()
-            width = max(width, self.printBlok(tt, st, "|", 3, "-", False, min_width=width, outToList=out) )
-
+            # pokud je tak afrerTitle
             if self.afterTitle:
                 width = max(width, self.printBlok(afterTitle, [], "", 0, "", False, min_width=width, outToList=out))
 
-            # vytvoříme volby
-            # zjistí max délku choice
-            max_l_LenChoices=0
-            lst=self.__getList()
-            for item in lst:
-                if not item.hidden and item.choice:
-                    if item.enabled:
-                        max_l_LenChoices=max(max_l_LenChoices,len(item.choice))
-                    else:
-                        max_l_LenChoices=max(max_l_LenChoices,len(TXT_DISABLED))
-            # vytvoříme menu
-            ch=[]
-            for item in lst:
-                if not item.hidden:
-                    lbl=item.label
-                    chcs=item.choice
-                    if not item.enabled:
-                        chcs = TXT_DISABLED
-                    chcs=chcs.ljust(max_l_LenChoices)
-                    chcs+= " - " if item.choice else "   "
-                    if len(str(lbl).strip())==0:
-                        chcs = ""
-                        lbl = ""
-                    elif lbl in _lineCharList:
-                        chcs = ""
-                        lbl = lbl * (width-2) # -2 mezery uvnitř obalu
-                        
-                    sel="  "
-                    if self._selectedItem==item:
-                        sel=chr(0x25B6)+" " # černá šipka doprava
-                    
-                    ch.append( [f"{sel}{chcs}{lbl}",item.atRight] )
-            
+            ch=self._print_getMenuList(menu_list,width)            
             width = max(width,self.printBlok(ch, [], "-", 0, "", True,min_width=width, outToList=out))
                         
             if self.afterMenu:
@@ -582,7 +624,7 @@ class c_menu:
         
         # inverze přes escape pokud >
         for i in range(len(out)):
-            if out[i].startswith(" "+chr(0x25B6)):
+            if out[i].startswith(" "+chr(0x25B6)) or out[i].startswith(chr(0x25B6)):
                 out[i]=text_inverse(out[i])
              
         if isinstance(toOut,list):
