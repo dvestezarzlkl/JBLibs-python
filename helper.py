@@ -3,6 +3,7 @@ from .lng.default import *
 import os, platform,sys,logging,subprocess,inspect,hashlib
 from importlib import util
 from typing import Union
+import configparser,re
 
 __LoggerInit:bool=False
 
@@ -186,18 +187,18 @@ def loadLng()->None:
         # Získáme cestu souboru, ze kterého byla funkce volána
         frame_stack = inspect.stack()
         if len(frame_stack) < 2:
-            log.warning("Není dostatečná hloubka zásobníku pro získání volajícího modulu.")
+            log.warning("There is not enough stack depth to get the calling module.")
             return
 
         frame = frame_stack[1]
         if len(frame) < 1:
-            log.warning("Není dostatečně velký rámec pro získání volajícího modulu.")
+            log.warning("There is not enough stack depth to get the calling module.")
             return
 
         caller_module = inspect.getmodule(frame[0])
 
         if caller_module is None:
-            log.warning("Nelze určit modul volajícího.")
+            log.warning("Cannot determine the calling module.")            
             return
 
         caller_file = frame.filename
@@ -321,3 +322,80 @@ def is_numeric(value)->bool:
         bool: True if value is numeric, False otherwise
     """
     return isinstance(value, (int, float, complex))
+
+def load_config()->None:
+    """Načte konfigurační soubor config.ini z adresáře, kde je spuštěn hlavní skript
+    a přepíše globální proměnné v modulu cfg.py
+
+    Returns:
+        None
+
+    Raises:
+        FileNotFoundError: detailní popis chyby
+    """
+    # Získat cestu ke složce, kde je hlavní skript spuštěn
+    script_dir = os.getcwd()
+    config_path = os.path.join(script_dir, "config.ini")
+
+    # Načíst a přepsat globální proměnné, pokud soubor existuje
+    config = configparser.ConfigParser()
+    config.optionxform = str # zachovat původní velikost písmen klíčů
+    if os.path.exists(config_path):
+        config.read(config_path)                
+        if 'globals' in config:            
+            frame_stack = inspect.stack()
+            if len(frame_stack) < 2:
+                log.warning("There is not enough stack depth to get the calling module.")
+                return
+
+            frame = frame_stack[1]
+            if len(frame) < 1:
+                log.warning("There is not enough stack depth to get the calling module.")
+                return
+            # otestujeme že caller je config, protože je určen jen pro něj, tzn cfg.py
+            if not frame.filename.endswith('/cfg.py'):
+                raise FileNotFoundError(f"Only cfg.py can call load_config().")
+
+            caller_module = inspect.getmodule(frame[0])
+
+            if caller_module is None:
+                log.warning("Cannot determine the calling module.")
+                return
+            vars = {key: parse_ini_value(config['globals'][key].strip('"')) for key in config['globals']}
+            __updateGlob(caller_module,vars)
+            
+    else:
+        raise FileNotFoundError(f"Config file '{config_path}' not found.")
+    
+    
+def parse_ini_value(value:str)->Union[int,float,str,None]:
+    """Převede hodnotu z ini souboru na int, float, str, None nebo bool
+    
+    Parameters:
+        value (str): hodnota z ini souboru
+
+    Returns:
+        Union[int,float,str,None]: převedená hodnota
+    """
+    # pokud začíná " tak je to řetězec a odstraníme " na začátku a konci
+    if value.startswith('"') and value.endswith('"'):
+        value = re.sub(r'^"|"$', '', value)
+        return value
+    v=value.lower()
+    if v in ['true','false']:
+        return v == 'true'
+    if v in ['none','null'] or not value:
+        return None
+    try:
+        # Zkusit převést na int
+        return int(value)
+    except ValueError:
+        try:
+            # Zkusit převést na float
+            return float(value)
+        except ValueError:
+            # Pokud je None, vrátit None
+            if value.lower() == 'none':
+                return None
+            # Jinak vrátit jako řetězec
+            return value
