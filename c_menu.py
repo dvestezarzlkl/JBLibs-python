@@ -11,7 +11,7 @@ from .term import getKey,text_inverse
 from .helper import constrain, is_numeric
 from time import sleep
 
-from helper import getLogger
+from .helper import getLogger
 log = getLogger(__name__)
 
 _lineCharList = "*-._+=~"
