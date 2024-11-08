@@ -195,6 +195,9 @@ class c_menu:
     """ Pokud je True, tak stisk ESC ukončí menu, pokud je False, tak se ignoruje
     Pokud je true tak se zobrazí v menu 'ESC - Exit' a b -Back ne
     """
+    
+    minMenuWidth:int=0
+    """Minimální šířka menu, pokud je nastaveno tak se menu nezmenší pod tuto hodnotu"""
 
     choiceQuit: c_menu_item = c_menu_item(TXT_QUIT, "q", lambda i: exit(0), "")
     """ Položka menu pro ukončení programu, pokud nechceme zobrazit nastavíme na None """
@@ -621,7 +624,7 @@ class c_menu:
                 st = ["ERROR"]
         
         out=[]
-        width=0
+        width=self.minMenuWidth
         # dva průchody, výpočetní a zobrazení
         for step in range(2):        
             out=[]
