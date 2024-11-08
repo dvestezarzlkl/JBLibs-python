@@ -8,13 +8,14 @@ loadLng()
 from typing import Callable, Any, Union, List, Tuple
 import traceback
 from .term import getKey,text_inverse
-from .helper import constrain, is_numeric
+from .helper import constrain
 from time import sleep
 
 from .helper import getLogger
 log = getLogger(__name__)
 
 _lineCharList = "*-._+=~"
+_bracket_pairs = {"(": ")", "[": "]", "{": "}", "<": ">","/":"/","\\":"\\","|":"|"}
 
 """
 Základní menu pro konzolové aplikace, založené na psané volbě klávesou od jednoho znaku
@@ -232,6 +233,72 @@ class c_menu:
         return ret
     
     @staticmethod
+    def sanitizeToStr(val)->str:
+        """pokud je None tak vrátí prázdný řetězec, jinak vrátí string
+        
+        Parameters:
+            val: hodnota ke zpracování
+            
+        Returns:
+            str: výstupní hodnota
+        """
+        try:
+            return "" if val is None else str(val)
+        except:
+            return ""
+    
+    @staticmethod
+    def sanitizeListFroProcess(lst)->List[Tuple[str,str]]:
+        """Převede list na list řetězců, pokud je None tak vrátí prázdný list
+        
+        Parameters:
+            lst: list k zpracování
+            
+        Returns:
+            List[List[str,str]]: výstupní list
+        """
+        if isinstance(lst,str):
+            lst=[lst]
+        if not isinstance(lst, (list, tuple)):
+            raise ValueError(TXT_CMENU_ERR04)
+
+        if not lst:
+            return []
+                
+        return [
+            [i, ""] if isinstance(i, str) else
+            [c_menu.sanitizeToStr(i[0]), c_menu.sanitizeToStr(i[1])]    if isinstance(i, (tuple, list)) and len(i) > 1  else
+            [c_menu.sanitizeToStr(i[0]), ""                        ]    if isinstance(i, (tuple, list)) and len(i) == 1 else
+            [" "                       , ""                        ]    if isinstance(i, (tuple, list)) and len(i) == 0 else
+            ["ERROR, row type"         , ""                        ]
+            for i in lst
+        ]
+    
+    @staticmethod
+    def getBrackets(b:str)->Tuple[str,str]:
+        """Sanitizuje vstup a vrátí pár závorek podle zadaného znaku
+        
+        Parameters:
+            b (str): závorka, může být "(","[","{","<" anebo "",  
+                pro nepárové znaky jsou povolené tyto znaky "/","\\","|"
+        
+        Returns:
+            Tuple[str,str]: pár závorek L a R
+        """        
+        # sanitizace závorek
+        b = b[0] if isinstance(b, str) and b else "" 
+        
+        if not b:
+            return "",""
+                
+        if ( x:=_bracket_pairs.get(b) ):
+            return b, x
+        elif b in [":","-"]:
+            return b + " ", ""
+        
+        return "",""
+    
+    @staticmethod
     def processList(
         lst: Union[List[str], List[Tuple[str, str]], List[List[str]]],
         onlyOneColumn: bool = False,
@@ -242,121 +309,64 @@ class c_menu:
     )-> Tuple[List[str],int]: # list položek a max délku řádku
         spaceBetweenTexts = constrain(spaceBetweenTexts, 3, 100)
 
-        if not isinstance(lst, (list, tuple)):
-            raise ValueError(TXT_CMENU_ERR04)
-
+        # sanitizace vstupu na konzistentní list
+        lst=c_menu.sanitizeListFroProcess(lst)
         if not lst:
             return [], 0
 
-        # konverze typů numeric na string
-        for i in range(len(lst)):
-            if is_numeric(lst[i]):
-                lst[i] = str(lst[i])
-            elif isinstance(lst[i], (list, tuple)):
-                for j in range(len(lst[i])):
-                    if is_numeric(lst[i][j]):
-                        lst[i][j] = str(lst[i][j])
-                    elif lst[i][j] is None:
-                        lst[i][j] = ""
-            elif lst[i] is None:
-                lst[i] = ""
-
-        # Získáme závorky
-        bracket_pairs = {"(": ")", "[": "]", "{": "}"}
-        if not isinstance(rightTxBrackets, str):
-            rightTxBrackets = ""            
-        rightTxBrackets=str(rightTxBrackets).strip()
-        if len(rightTxBrackets) > 1:
-            rightTxBrackets = rightTxBrackets[0]
-                
-        brL=""
-        brR=""
-        if rightTxBrackets:
-            x = bracket_pairs.get(rightTxBrackets)
-            if x:
-                brR=x
-                brL=rightTxBrackets
-            elif rightTxBrackets in [":","-"]:
-                brL=rightTxBrackets + " "
+        # nastavíme levou a pravou stranu závorek
+        brL,brR=c_menu.getBrackets(rightTxBrackets)
 
         # Převedeme list na list řetězců
         ret = []
-        for item in lst:
-            i_l=[""]
-            i_r=[""]
-                        
-            if isinstance(item, list):
-                item = tuple(item)  # Převedeme list na tuple
+        for item in lst:                                    
+            x1 = item[0].splitlines()
+            x2 = item[1].splitlines() if len(item) > 1 else []
             
-            # pokud numeric tak převedeme na string
-            if isinstance(item, int) or isinstance(item, float):
-                i_l = [str(item)]                
-            elif isinstance(item, str):                
-                if item:
-                    i_l=item.splitlines()
-                    i_r=[""] * len(i_l)
-            elif isinstance(item, tuple):
-                x1 = item[0].splitlines()
-                x2 = []
-                if len(item) > 1:
-                    x2 = item[1].splitlines()
-                    
-                if x1 or x2:
-                    i_l=[]
-                    i_r=[]
-                    # zpracuj více-řádky
-                    for i in range(max(len(x1), len(x2))):
-                        r=""
-                        l=""
-                        if i < len(x1):
-                            l=str(x1[i]).rstrip()
-                        if i < len(x2):
-                            r=str(x2[i]).lstrip()
-                        i_l.append(l)
-                        i_r.append(r)
-            else:
-                # nepovolený typ
-                raise ValueError(TXT_INVALID_TYPE_IN_LIS+f": {item}")                    
+            i_l=[""] if not x1 else x1
+            i_r=[""] if not x2 else x2
             
-            # zpracujeme přídavky
-            
-            # prefix
+            # dorovnej délky polí
+            if len(i_l) > len(i_r):
+                i_r.extend([""] * (len(i_l) - len(i_r)))
+            elif len(i_r) > len(i_l):
+                i_l.extend([""] * (len(i_r) - len(i_l)))
+                
+            # zpracujeme přídavky            
+            #   prefix
             i_l = [ f'{linePrefix}{i}' for i in i_l]
-            # závorky                    
+            #   závorky                    
             i_r = [ f"{brL}{i}{brR}" if i else '' for i in i_r]
                     
+            # vyžadujeme jeden column tak pravý vynulujeme
             if onlyOneColumn:
                 i_r = [''] * len(i_l)
 
+            # toto by vážně nemělo nastat - pro jistotu
             if len(i_l) != len(i_r):
                 raise ValueError(TXT_CMENU_ERR01)
             
-            # přidáme
-            ret.extend((l, r) for l, r in zip(i_l, i_r))
+            # přidáme do výsledku
+            ret.extend(zip(i_l, i_r))
+        lst=ret
 
         # vypočítáme maximální délku levého a pravého sloupce
-        w = 0
-        addBetween = False
-        for i in ret:
-            if not isinstance(i, tuple):
-                raise ValueError(TXT_CMENU_ERR02)
-            
-            if len(i[0]) > 1 and len(i[1]) > 0:
-                addBetween = True
-
-            w = max(w , 
+        width = max(
+            minWidth,
+            max(
                 (
-                    spaceBetweenTexts if addBetween else 0
+                    spaceBetweenTexts
+                    if len(i[0]) > 1 and len(i[1]) > 0
+                    else 0
                 )
-                + len(i[0])
-                + len(i[1])
+                + len(i[0]) + len(i[1])
+                for i in ret
             )
-                
-        width = max(minWidth, w)
+        )
 
         # vytvoříme list z width
-        ret2 = []
-        for i in ret:            
+        ret = []
+        for i in lst:            
             sp_btw = width - len(i[0])
             if len(i[0]) > 0 and len(i[1]) > 0:
                 sp_btw = sp_btw - len(i[1])
@@ -366,17 +376,31 @@ class c_menu:
             
             # generování řádku se str nebo tuple, výstup bude jen List[str] s konstantní šířkou
             if i[0] and i[1]:
-                ret2.append(f"{i[0]}{' ' * sp_btw}{i[1]}")
+                ret.append(f"{i[0]}{' ' * sp_btw}{i[1]}")
             elif i[0] and not i[1]:
                 # pokud se jedná o jednoznakový znak z `_lineCharList` tak se zopakuje v délce width
-                if len(i[0])==1 and i[0][0] in _lineCharList:
-                    ret2.append(i[0] * width)
+                spl=i[0].strip()
+                spl= spl[0] if len(spl)==1 else ""
+                if not spl:
+                    if len(i[0])==1:
+                        spl=i[0][0] # jedná se o mezeru nebo mezery, tzn mezerový splitter
+                    elif len(i[0])>1:
+                        # doplníme mezery na konec
+                        spl=i[0].ljust(width)
+                        
+                
+                if spl in _lineCharList:
+                    splW=width-len(i[0])+1
+                    ret.append( 
+                        (" " * (width-splW))
+                        +(splW*spl)
+                    )
                 else: # jinak se dorovná mezerami
-                    ret2.append(i[0].ljust(width))
+                    ret.append(i[0].ljust(width))
             else:
-                ret2.append(i[1].rjust(width))
+                ret.append(i[1].rjust(width))
                                 
-        return ret2, width
+        return ret, width
 
     @staticmethod
     def printBlok(
@@ -421,42 +445,37 @@ class c_menu:
             int: délka nejdelšího řádku, vnější rozměr
         
         """
-        obalW=0
+        # Sanitizace vstupů
+        charObal = charObal[0] if isinstance(charObal, str) and charObal else ""
+        leftRightLength = constrain(leftRightLength,0,10) if isinstance(leftRightLength, int) else 0
+        
+        # Zajištění, že pokud je leftRightLength 0 nebo charObal prázdný, obalování nebude použito
+        if leftRightLength == 0 or not charObal:
+            leftRightLength = 0
+            charObal = ""        
+        
+        # Určení, jestli bude použito ohraničení, tady už je jedno jesli or nebo and
+        obal = bool(charObal or leftRightLength)
+        
+        # Určení šířky ohraničení
+        obalW = leftRightLength * 2 + 2 if obal else 0        
+        
+        # init var    
+        width = max(0, min_width - obalW)
         out=[]
-        ## Předzpracování položek
-        # Převod všech položek na konzistentní formát a odstranění CR/LF
-        if not isinstance(charObal, str):
-            charObal = ""
-        if charObal:
-            charObal = charObal[0]
-            obal = True
-        else:
-            charObal = ""
-            leftRightLength = 0
-            obal = False
-        if not isinstance(leftRightLength, int):
-            leftRightLength = 0
-            charObal = ""
-        leftRightLength = constrain(leftRightLength, 0, 10)
-        if leftRightLength:
-            obalW+=leftRightLength*2+2 # 2 = mezera zleva a zprava
-        else:
-            charObal=""
-            obal = False
-
-        width=min_width-obalW # odešteme mezery zleva a zprava a obal, tím máme místo na text menu
-        if width<0:
-            width=0
-            
-        processed_subTitle_items = c_menu.processList(
-            subTitle_items,
-            onlyOneColumn=False,
-            linePrefix=charSubtitle+" ",
-            minWidth=width,
-            rightTxBrackets=rightTxBrackets
+        
+        # jen zjistíme šířku tutilků, pokud by byly náhodou delší jak title items
+        width = max(width, 
+            c_menu.processList(
+                subTitle_items,
+                onlyOneColumn=False,
+                linePrefix=charSubtitle+" ",
+                minWidth=width,
+                rightTxBrackets=rightTxBrackets
+            )[1]
         )
-        width = max(width, processed_subTitle_items[1])
-
+        pass
+        # začínáme finální výpočty, tzn první title ale už s min_width titulků
         processed_title_items = c_menu.processList(
             title_items,
             onlyOneColumn=False,
@@ -467,7 +486,7 @@ class c_menu:
         width = max(width, processed_title_items[1])
         processed_title_items = processed_title_items[0]
 
-        # ještě jendou zpracujeme subTitle_items, protože se může změnit šířka
+        # finálně zpracujeme subTitle_items, protože se mohla změnit šířka o title items
         processed_subTitle_items = c_menu.processList(
             subTitle_items,
             onlyOneColumn=False,
@@ -478,45 +497,49 @@ class c_menu:
         width = max(width, processed_subTitle_items[1])
         processed_subTitle_items = processed_subTitle_items[0]
 
-
+        # finální komplet items
         menu = processed_title_items + processed_subTitle_items      
         
-        if charObal=="|":
-            spacer = "-" * (width+2) # 2 = mezera zleva a zprava
-        else:
-            spacer = charObal * (width+2)  # 2 = mezera zleva a zprava
-        
+        # vytvoříme spacer z charObal, pokud je "" tak bude ""
+        # pokud roura tak změníme na mínus
+        ow=width + ( 2 if obal else 0 )
+        spacer = "-" * ow if charObal=="|" else charObal * ow
+                
         h_Obal = charObal * leftRightLength
 
         if obal:
+            # přidáme okraje na spacer, pokud je obal
             # spacer by měl být = width+obalW
             spacer = f"{h_Obal}{spacer}{h_Obal}"
         
         if obal:
+            # vložíme horní ohraničení, pokud je požadováno
             out.append(spacer)
         
-        # Vytiskneme menu
-        for item in menu:
-            if obal:
-                out.append(f"{h_Obal} {item} {h_Obal}")
-            else:
-                out.append(item)
-                
-        # Vytiskneme spodní ohraničení, pokud je požadováno
+        # vložíme položky menu podle obalu
+        out.extend(
+            [
+                f"{h_Obal} {item} {h_Obal}" if obal else item
+                for item in menu
+            ]
+        )
+                            
         if obal:            
+            # Vytiskneme spodní ohraničení, pokud je požadováno
             out.append(spacer)
         
-        # Přidáme prázdný řádek, pokud je eof nastaveno na True
         if eof:
+            # Přidáme prázdný řádek, pokud je eof nastaveno na True
             out.append("")
-        
+
         if isinstance(outToList,list):
+            # nechceme tisknout ale vrátit
             outToList.extend(out)
         else:
+            # požadujeme tisk, nechceme vracet
             print("\n".join(out))
         
-        width = max(width, width+obalW)
-        return width
+        return max(width, width+obalW)
 
     def _print_getMenuList(self,menu_list:List[c_menu_item],width:int)->list:
         """interní funkce, vrátí list pro  tisk menu položek
@@ -551,7 +574,7 @@ class c_menu:
                     lbl = ""
                 elif lbl in _lineCharList:
                     chcs = ""
-                    lbl = lbl * (width-2) # -2 mezery uvnitř obalu
+                    # lbl = lbl * (width-5) # -2 mezery uvnitř obalu
                     
                 sel="  "
                 if self._selectedItem==item:
