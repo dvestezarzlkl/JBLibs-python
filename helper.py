@@ -111,7 +111,7 @@ def haveSystemd()->bool:
 
 def cls()->None:
     """
-    Smaže obsah konzole
+    Smaže obsah konzole pomoc cls/clear
     
     Parameters:
         None

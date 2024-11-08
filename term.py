@@ -243,7 +243,8 @@ def text_inverse(text:str)->str:
     return f"\033[7m{text}\033[0m"
 
 def cls()->None:
-    """ Vymaže obsah obrazovky resetuje kurzor na začátek obrazovky
+    """ Vymaže obsah obrazovky pomocí ASCII  
+    a resetuje kurzor na začátek obrazovky
     
     Returns:
         None
