@@ -1,10 +1,9 @@
 from .lng.default import * 
 from .helper import loadLng
-from .term import restoreAndClearDown,savePos,getKey
+from .term import restoreAndClearDown,savePos,getKey,cls
 loadLng()
 
 import re, bcrypt, getpass
-from .helper import cls
 from .c_menu import printBlock
 from typing import Union,Callable
 
@@ -39,14 +38,16 @@ def validate_port(port: Union[int,str], full:bool=False) -> bool:
     else:
         return 1024 <= port <= 65535
 
-def get_username(action: str, maxLength:int=50) -> str:
+def get_username(messagePrefix:None, make_cls: bool=False, maxLength:int=50, minMessageWidth:int=0) -> str:
     """
     Čeká na zadání uživatelského jména, validuje ho a vrací
     povolené znaky jsou alfanumerické znaky a-Z , podtržítko a pomlčka
     
     Parameters:
-        action (str): text který se zobrazí uživateli
+        assMessagestr (None): text který se zobrazí uživateli jako další řádek pod výzvou, pokud je zadáno
+        make_cls (bool): pokud je True, tak se před zadáním smaže obrazovka
         maxLength (int): maximální délka jména
+        minMessageWidth (int): minimální šířka zprávy
         
     Returns:
         str: uživatelské jméno
@@ -54,12 +55,13 @@ def get_username(action: str, maxLength:int=50) -> str:
     if not isinstance(maxLength, int):
         maxLength=50
     return get_input(
-        TXT_INPUT_USERNAME,
+        TXT_INPUT_USERNAME+(f"\n  {messagePrefix}" if messagePrefix else ""),
         False,
         re.compile(r'^[\w_-]+$'),
         maxLength,
-        False,
-        TXT_SSMD_ERR17
+        make_cls,
+        TXT_SSMD_ERR17,
+        minMessageWidth=minMessageWidth
     )
 
 def get_input(
@@ -69,7 +71,8 @@ def get_input(
         maxLen=0,
         clearScreen:bool=False,
         errTx:str=TXT_SSMD_ERR18,
-        titleNote:str=""
+        titleNote:str="",
+        minMessageWidth:int=0
     ) -> str:
     """
     Obecná funkce pro získání vstupu od uživatele, validuje vstup
@@ -83,6 +86,7 @@ def get_input(
         clearScreen (bool) (False): pokud je True, tak se před zadáním smaže obrazovka
         errTx (str) ("default text"): text chybové hlášky
         titleNote (str) (""): text poznámky
+        minMessageWidth (int) (0): minimální šířka zprávy
     
     Returns:
         Union(str,None): vstup od uživatele
@@ -103,7 +107,7 @@ def get_input(
             print("\033[u", end="")  # ANSI sekvence pro obnovení pozice kurzoru
             print("\033[J", end="")  # Vymaže od kurzoru dolů
             
-            printBlock(i, s, eof=True)
+            printBlock(i, s, eof=True,min_width=minMessageWidth)
             if err:
                 print(err)
                 print("")
@@ -138,12 +142,22 @@ def get_input(
         restoreAndClearDown()
 
 # Helper function to get password
-def get_pwd(action: str = "") -> str:
+def get_pwd(action: str = "",make_cls:bool=False, minMessageWidth:int=0) -> str:
     """
     Ask for a password, validate it, and return the valid password.
+    
+    Parameters:
+        action (str) (""): text which will be displayed to the user
+        make_cls (bool) (False): if True, the screen will be cleared before input
+        minMessageWidth (int) (0): minimum message width
+        
+    Returns:
+        str: password
     """
     err=""
     savePos()
+    if make_cls:
+        cls()
     if not isinstance(action, str):
         action=""
     if action:
@@ -156,7 +170,7 @@ def get_pwd(action: str = "") -> str:
         while True:
             restoreAndClearDown()
             
-            printBlock(i, s, eof=True)
+            printBlock(i, s, eof=True, min_width=minMessageWidth)
             if err:
                 print(err)
                 print("")
@@ -172,12 +186,21 @@ def get_pwd(action: str = "") -> str:
     finally:
         restoreAndClearDown()
 
-def get_pwd_confirm() -> str:
+def get_pwd_confirm(make_cls:bool=False, minMessageWidth:int=0) -> str:
+    """Požadavek na zadání hesla s validací hesla a jeho potvrzení
+
+    Parameters:
+        make_cls (bool, optional): _description_. Defaults to False.
+        minMessageWidth (int, optional): _description_. Defaults to 0.
+
+    Returns:
+        str: _description_
+    """
     while True:
-        password = get_pwd(TXT_INPUT_NEW_PWD)
+        password = get_pwd(TXT_INPUT_NEW_PWD,make_cls, minMessageWidth)
         if password == None:
             return None
-        confirm_password = get_pwd(TXT_INPUT_PWD_AGAIN)
+        confirm_password = get_pwd(TXT_INPUT_PWD_AGAIN,make_cls, minMessageWidth)
         if confirm_password == None:
             return None
         if password == confirm_password:
@@ -186,15 +209,25 @@ def get_pwd_confirm() -> str:
             print(TXT_SSMD_ERR20)
     return password
 
-def get_port(make_cls:bool=False) -> int:
+def get_port(make_cls:bool=False, minMessageWidth:int=0) -> int:
+    """Čeká na zadání portu, validuje ho a vrací
+    
+    Parameters:
+        make_cls (bool): pokud je True, tak se před zadáním smaže obrazovka
+        minMessageWidth (int): minimální šířka zprávy
+        
+    Returns:
+        int: číslo portu        
+    """
     return get_input(
         TXT_INPUT_PORT,
         False,
         validate_port,
         0,
-        False,
+        make_cls,
         TXT_SSMD_ERR21,
-        TXT_SSMD_PORT_REANGE
+        TXT_SSMD_PORT_REANGE,
+        minMessageWidth
     )
 
 # využívá bcrypt
@@ -208,7 +241,7 @@ def hash_password(password: str) -> str:
     
     return hashed.decode('utf-8')
         
-def anyKey(RETURN_KeyOny:bool=False, cls:bool=False) -> None:
+def anyKey(RETURN_KeyOny:bool=False, cls:bool=False,minMessageWidth:int=0) -> None:
     """ Čeká na stisk klávesy nebo RETURN v závislosti na volbě, nevyužívá input
     - returnKeyOny: bool - pokud je True, tak se čeká na stisk klávesy RETURN, jinak na jakoukoliv klávesu
     - cls: bool - pokud je True, tak se před čekáním smaže obrazovka
@@ -216,9 +249,9 @@ def anyKey(RETURN_KeyOny:bool=False, cls:bool=False) -> None:
     if cls:
         cls()
     if RETURN_KeyOny:
-        printBlock([TXT_INPUT_RETURNKEY], [], "*", 3, "", False)
+        printBlock([TXT_INPUT_RETURNKEY], [], "*", 3, "", False,min_width=minMessageWidth)
     else:
-        printBlock([TXT_INPUT_ANYKEY], [], "*", 3, "", False)
+        printBlock([TXT_INPUT_ANYKEY], [], "*", 3, "", False,min_width=minMessageWidth)
     
     while True:
         c=getKey(ENTER_isExit=True)
@@ -229,7 +262,7 @@ def anyKey(RETURN_KeyOny:bool=False, cls:bool=False) -> None:
             if c is not None:
                 break     
         
-def confirm(msg: str, make_cls:bool=False) -> bool:
+def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
     """ Čeká na potvrzení pomocí klávesy Y nebo N"""
     if make_cls:
         cls()
@@ -238,7 +271,7 @@ def confirm(msg: str, make_cls:bool=False) -> bool:
         ' - '+confirm_choices[0][0].upper()+' = '+confirm_choices[0][1],
         ' - '+confirm_choices[1][0].upper()+' = '+confirm_choices[1][1]
     ]
-    printBlock(i, [], "-", 3, "", False)
+    printBlock(i, [], "-", 3, "", False,min_width=minMessageWidth)
     
     ch = getKey(forKeys=confirm_choices[0][0]+confirm_choices[1][0])
     ch=ch.strip().lower()
