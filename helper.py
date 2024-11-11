@@ -3,9 +3,28 @@ from .lng.default import *
 import os, platform,sys,logging,subprocess,inspect,hashlib
 from importlib import util
 from typing import Union
-import configparser,re
+import configparser,re,psutil
+from select import select as t_sel
+from typing import List
 
 __LoggerInit:bool=False
+
+class c_prcLstn:
+    processName:str=""
+    processID:int=0
+    userName:str=""
+    ip:str=""
+    port:int=0
+
+    def __init__(self, processName:str="", processID:int=0, userName:str="", ip:str="", port:int=0):
+        self.processName=processName
+        self.processID=processID
+        self.userName=userName
+        self.ip=ip
+        self.port=port
+    
+    def __repr__(self):
+        return f"proc: {self.processName}, pid: {self.processID},  u: {self.userName}, tcp ip:port: {self.ip}:{self.port}"
 
 def initLogging(file_name:str="app.log"):
     """
@@ -399,3 +418,42 @@ def parse_ini_value(value:str)->Union[int,float,str,None]:
                 return None
             # Jinak vrátit jako řetězec
             return value
+        
+def sleep_ms(ms: int):
+    """Jako time.sleep ale přesnější
+
+    Parameters:
+        ms (int): počet milisekund
+    """
+    seconds = ms / 1000.0
+    # select.select([], [], [], timeout) uspí po dobu "timeout" v sekundách
+    t_sel([], [], [], seconds)
+
+def getListeningPorts(processName:str="node node-red")->List[c_prcLstn]:
+    """Vrátí seznam portu pro zadaný proces
+    
+    Parameters:
+        processName (str): jméno procesu, mezera odděluje více jmen
+        
+    Returns:
+        List[c_prcLstn]: seznam portů
+    """
+    ret=[]
+    psN=processName.lower.strip().split(' ')
+    for conn in psutil.net_connections(kind='inet'):
+        if conn.status == psutil.CONN_LISTEN:
+            pid = conn.pid
+            if pid is not None:
+                try:
+                    process = psutil.Process(pid)
+                    if process.name().lower() in psN:
+                        item = c_prcLstn()
+                        item.processName=process.name()
+                        item.processID=pid
+                        item.userName=process.username()
+                        item.ip=conn.laddr.ip
+                        item.port=conn.laddr.port
+                        ret.append(item)                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+    return ret
