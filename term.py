@@ -2,6 +2,7 @@ import os
 import sys
 import termios
 import time
+from .helper import sleep_ms
 from typing import Union
 
 _old_settings = None
@@ -166,7 +167,12 @@ def getKey(
     set_nonBlocking_terminal_input()
     ch = None
     try:
+        first=True
         while True:
+            if first:
+                first=False
+            else:
+                sleep_ms(50)
             ch = getK()
             if ch is None:
                 continue
