@@ -646,7 +646,7 @@ class c_menu:
                 if lastRet.err:
                     width = max(width, self.printBlok([TXT_ERR, lastRet.err], [], "!", 3, "", False,min_width=width , outToList=out))
                 if lastRet.ok:
-                    width = max(width, self.printBlok([TXT_NFO, lastRet.ok], [], "-", 3, "", False,min_width=width), outToList=out)
+                    width = max(width, self.printBlok([TXT_NFO, lastRet.ok], [], "-", 3, "", False,min_width=width, outToList=out))
         
         # inverze přes escape pokud >
         for i in range(len(out)):
