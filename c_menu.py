@@ -800,6 +800,9 @@ class c_menu:
             x=self.run_refresh(c,first)
             if isinstance(x,str):                
                 return x
+            
+            if first:
+                sleep(0.1)
             first = False
 
             xc=getKey(ESC_isExit=True)
@@ -912,7 +915,7 @@ class c_menu:
                     return e
                 if not x  is False:
                     return
-            sleep(0.4)
+            sleep(0.25)
                 
     def callExitMenu(self,itm: 'c_menu')->Union[bool,str,None]:
         if self.onExitMenu:
