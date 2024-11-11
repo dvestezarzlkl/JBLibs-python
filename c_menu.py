@@ -735,7 +735,7 @@ class c_menu:
         if first:
             if self.onEnterMenu:
                 try:
-                    log.debug(f"onEnterMenu")
+                    # log.debug(f"onEnterMenu")
                     x=self.onEnterMenu()
                     if isinstance(x,str):
                         return x
@@ -746,7 +746,7 @@ class c_menu:
                                     
         if self.onShowMenu:
             try:
-                log.debug(f"onShowMenu")
+                # log.debug(f"onShowMenu")
                 self.onShowMenu()
             except Exception as e:
                 self.lastReturn = onSelReturn(err=str(e))
@@ -758,7 +758,7 @@ class c_menu:
         self._rowLength = self.__print(self.lastReturn)
         if self.onShownMenu:
             try:
-                log.debug(f"onShownMenu")
+                # log.debug(f"onShownMenu")
                 self.onShownMenu()
             except Exception as e:
                 self.lastReturn = onSelReturn(err=str(e))
