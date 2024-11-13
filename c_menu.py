@@ -7,7 +7,7 @@ loadLng()
 
 from typing import Callable, Any, Union, List, Tuple
 import traceback
-from .term import getKey,text_inverse
+from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC
 from .helper import constrain
 from time import sleep
 
@@ -51,13 +51,6 @@ class onSelReturn:
 class c_menu_item:
     """ Třída reprezentující jednu položku menu """
 
-    label: str = ""
-    """ Zobrazený název položky menu - jednořádkový, například "Start service  
-    - pokud necháme prázdné tak z memu bude oddělovací prázdný řádek
-    - pokud nastavíme na '-','=','+','_' 
-      tak bude oddělovací čára z tohoto znaku v délce title obálky
-    """
-
     choice: str = ""
     """ Klávesová zkratka pro tuto položku menu, například "s" """
 
@@ -78,6 +71,107 @@ class c_menu_item:
 
     atRight:str=""
     """ Pokud je nastaveno, tak se zobrazí na pravé straně menu"""
+    
+    justifyLabel:str="l"
+    """ Default je 'l' i v případě chybné hodnoty, jinak:
+    - l = left
+    - r = right
+    - c = center
+    """
+    
+    isTitleInverse:bool=False
+    """Pokud je True, tak nastavíme isTitle=True se label zobrazený jako titulek zobrazí inverzně"""
+    
+    _isTitle:bool=False
+    _label:str=""
+    _minW:int=0
+    
+    @property
+    def minW(self):
+        """Minimální šířka položky, bude doplněno mezerami na tuto šířku"""
+        return self._minW
+    
+    @minW.setter    
+    def minW(self, value):        
+        if not value:
+            value=0
+        if not isinstance(value,int):
+            value=int(value)
+            
+        if value<0:
+            value=0
+        if value>100:
+            value=100
+        self._minW = value
+    
+    @property
+    def isTitle(self):
+        """Vrací True pokud je položka titulek
+        Nastavením property na true se položka změní na titulek tzn. bude inverzní s mezerami okolo
+        a vynuluje se choice
+
+        Returns:
+            _type_: _description_
+        """
+        return self._isTitle
+    
+    @isTitle.setter
+    def isTitle(self, value):
+        if self._isTitle == value:
+            return
+        if not isinstance(value,bool):
+            value=bool(value)
+        self._isTitle = value
+        if value:
+            self.choice=""
+
+    @property
+    def label(self):
+        """ Zobrazený název položky menu - jednořádkový, například "Start service  
+        - pokud necháme prázdné tak z memu bude oddělovací prázdný řádek
+        - pokud nastavíme na '-','=','+','_' 
+        tak bude oddělovací čára z tohoto znaku v délce title obálky
+        """        
+        v= self._label
+        if not v:
+            return ""
+        if self._isTitle:
+            v = f".: {v} :."
+
+        w=len(v)
+        w=max(w+2,self._minW)
+        
+        w-=len(v)
+        if w<0:
+            w=0
+        if w:
+            l=w//2
+            r=w-l
+        else:
+            l=0
+            r=0
+        
+        ch= " " if not self._isTitle else "."
+        
+        j=str(self.justifyLabel).lower()
+        if j=="r":
+            v = f"{ch*r}{v}"
+        elif j=="c":
+            v = f"{ch*l}{v}{ch*r}"
+        else:
+            v = f"{v}{ch*r}"
+        if self._isTitle and self.isTitleInverse:
+            v = text_inverse(v)
+        return v
+    
+    @label.setter
+    def label(self, value):
+        """Nastaví label a upraví podle isTitle"""
+        if not isinstance(value,str):
+            value=str(value)
+        # remove cr lf tab vpodstatě
+        value = ''.join([i for i in value if not i in ["\n\r\t"] ])
+        self._label = value
 
     def __init__(
         self,
@@ -88,7 +182,10 @@ class c_menu_item:
         data: Any = None,
         enabled:bool=True,
         hidden:bool=False,
-        atRight:str=""
+        atRight:str="",
+        isTitle:bool=False,
+        labelJustify:str="l",
+        minW:int=0
     ):
         self.label = label
         self.choice = choice
@@ -98,6 +195,10 @@ class c_menu_item:
         self.enabled=enabled
         self.hidden=hidden
         self.atRight=atRight
+        self.isTitle=isTitle
+        self.justifyLabel=labelJustify
+        self.minW=minW
+        
     def __repr__(self):
         r= f"c_menu_item( '{self.label}'"
         r+= f", '{self.choice}'"
@@ -140,16 +241,148 @@ class c_menu_item:
         except (TypeError, ValueError):
             return str(self.data)    
 
+class c_menu_title_label(c_menu_item):
+    """
+    Nadpis pro menu sekci, pokud je použito tak je před a za vložena mezera
+    """
+    def __init__(self, label:str):
+        super().__init__(
+            label,
+            isTitle=True,
+            labelJustify='c',
+            minW=50
+        )
+
+class c_menu_block_items:
+    """ Třída reprezentující blok položek menu, který může být zobrazen pomocí 'printBlock'  
+    lze použít call pro získání listu položek, tzn př.
+        
+        ```
+        m=c_menu_block_items("a")
+        print(m())
+        ```
+    """
+    
+    _l:List[Tuple[str,str]]=[]
+    
+    def __init__(self,items:List[Union[str,Tuple[str,str],'c_menu_block_items']]=None):
+        self._l=[]
+        if items:
+            self.extend(items)
+    
+    def __repr__(self):
+        return self._l.__repr__()
+    
+    def _sanitizeItem(self,item:Union[str,Tuple[str,str]],boolNoError:bool=False) -> Tuple[str,str]:
+        """Sanitizuje položku a vrátí tuple s dvěma hodnotami
+        
+        Parameters:
+            item (Union[str,Tuple[str,str]]): položka ke zpracování, může být:
+                - `str`, tak se použije (val,'')
+                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje
+                - `list` = stejně jako tuple
+                - ostatní hodnoty vyvolají chybu nebo vrátí prázdný tuple viz boolNoError
+            boolNoError (bool): default(False) pokud je True, tak nevyvolává chybu, ale vrátí prázdný tuple
+            
+        Returns:
+            Tuple[str,str]: výstupní hodnota
+            
+        Raises:
+            ValueError: pokud je formát položky neplatný a boolNoError je False
+        """
+        if isinstance(item,str):
+            return (item,"")
+        elif isinstance(item, (tuple,list)):
+            if len(item)>1 and isinstance(item[0],str) and isinstance(item[1],str):
+                return item
+            elif len(item)==1 and isinstance(item[0],str):
+                return (item[0],"")
+        if boolNoError:
+            return ("","")
+        raise ValueError("Invalid format of item")
+    
+    def clear(self) -> 'c_menu_block_items':
+        """Vyčistí seznam
+        """
+        self._l.clear()
+        return self
+    
+    def append(self,item:Union[str,Tuple[str,str]]) -> 'c_menu_block_items':
+        """Přidá položku do seznamu
+        
+        Parameters:
+            item (Union[str,Tuple[str,str]]): položka k přidání, může být:
+                - `str`, tak se použije (val,'')
+                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje
+                
+        Returns:
+            c_menu_block_items: vrátí instanci třídy
+        """
+        self._l.append(self._sanitizeItem(item))
+        
+    def extend(self,items:Union[str,'c_menu_block_items',List[Union[str,Tuple[str,str]]]]) -> 'c_menu_block_items':
+        """Přidá položky do seznamu
+        
+        Parameters:
+            items (Union[str,'c_menu_block_items',List[Union[str,Tuple[str,str]]]): položky k přidání, může být:
+                - `str`, tak se použije (val,'')
+                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje
+                - `list` = stejně jako tuple
+                - `c_menu_block_items` = jiný objekt c_menu_block_items, jeho obsah se přidá k tomuto objektu
+                
+        Returns:
+            c_menu_block_items: vrátí instanci třídy
+        
+        """
+        if isinstance(items,(list,tuple)):
+            for item in items:
+                self._l.append(self._sanitizeItem(item))            
+            return self
+        elif isinstance(items,c_menu_block_items):
+            self._l.extend(items._l)
+            return self
+        elif isinstance(items,str):
+            self._l.append((items,""))
+            return self
+        raise ValueError("Invalid format of items")
+    
+    def __iter__(self):
+        return iter(self._l)
+    
+    def __len__(self):
+        return len(self._l)
+    
+    def __getitem__(self,idx:int) -> Tuple[str,str]:
+        return self._l[idx]
+    
+    def __setitem__(self,idx:int,item:Union[str,Tuple[str,str]]):
+        self._l[idx]=self._sanitizeItem(item)
+        
+    def __delitem__(self,idx:int):
+        del self._l[idx]
+        
+    def __call__(self, *args, **kwds):        
+        """Vrátí list položek
+        
+        Parameters:
+            *args: nepoužito
+            **kwds: nepoužito            
+            
+        Returns:
+            List[Tuple[str,str]]: výstupní hodnota
+        """
+        return self._l
+
 class c_menu:
     """ Třída reprezentující menu, doporučuje se extend s přepisem potřebných hodnot """
 
     menu: list[c_menu_item] = []
     """ Položky menu """
 
-    title: str = "Menu"
+    title: c_menu_block_items = c_menu_block_items('Menu')
     """ Název menu, může být jednořádkový nebo víceřádkový s LF bez CR """
 
-    subTitle: str = ""
+    subTitle: c_menu_block_items = c_menu_block_items()
     """ Podtitulek menu - je to řádek za title odsazený mezerou, může být multiline s LF bez CR """
 
     afterTitle: str = ""
@@ -202,13 +435,18 @@ class c_menu:
     choiceQuit: c_menu_item = c_menu_item(TXT_QUIT, "q", lambda i: exit(0), "")
     """ Položka menu pro ukončení programu, pokud nechceme zobrazit nastavíme na None """
 
+    setInputMessageWitthToLastCalc:bool=True
+    """Pokud je True, tak v modulu input nastaví min šířku zpráv podle poslední vypočítané šířky menu
+    """
+
     _runSelItem:c_menu_item=None
     """ Položka menu, která byla vybrána a vstoupila do run, pokud bylo toto menu definováno jako sub menu v onSelect """
     
     _mData:Any=None
     """ menu Data, která byla předána z _runSelItem.data, můžeme přepsat v potomkovi správným typem pro IDE """
 
-    _rowLength: int = 50
+    _lastCalcMenuWidth: int = 50
+    """poslední spočítaná šírka menu"""
     
     _selectedItem: c_menu_item = None
 
@@ -220,19 +458,28 @@ class c_menu:
         """ Vrací seznam položek menu s, pokud není None, back a quit """
         ret: list[c_menu_item] = []
         for item in self.menu:
-            ret.append(item)        
+            ret.append(item)
+            
+        e=[]
         if self.choiceBack and  not self.ESC_is_quit:
-            ret.append(self.choiceBack)
+            e.append(self.choiceBack)
         if self.ESC_is_quit:
-            ret.append(c_menu_item(TXT_ESC_isExit))
+            e.append(c_menu_item(TXT_ESC_isExit))
         if self.choiceQuit:
-            ret.append(self.choiceQuit)
+            e.append(self.choiceQuit)
+            
+        if e:
+            ret.append(None)
+            ret.extend(e)
 
         # volby převedeme na malá otrimovaná písmena, včetně int na string
         for item in ret:
+            if item is None:
+                continue
             item.choice = str(item.choice).lower().strip()
             if type(item.choice) == int:
                 item.choice = str(item.choice)
+        
         return ret
     
     @staticmethod
@@ -303,19 +550,22 @@ class c_menu:
     
     @staticmethod
     def processList(
-        lst: Union[List[str], List[Tuple[str, str]], List[List[str]]],
+        lst: c_menu_block_items,
         onlyOneColumn: bool = False,
         spaceBetweenTexts: int = 3,
         rightTxBrackets: str = "(", # podpora "", "(", "[", "{", ":" a "-"
         minWidth: int = 0,
         linePrefix:str='', # může být například '- '
-    )-> Tuple[List[str],int]: # list položek a max délku řádku
+    )-> Tuple[List[str],int]: # list položek a max délku řádku        
         spaceBetweenTexts = constrain(spaceBetweenTexts, 3, 100)
 
-        # sanitizace vstupu na konzistentní list
-        lst=c_menu.sanitizeListFroProcess(lst)
         if not lst:
             return [], 0
+        
+        if not isinstance(lst, c_menu_block_items):
+            raise ValueError(TXT_CMENU_ERR02)
+        
+        lst=lst()
 
         # nastavíme levou a pravou stranu závorek
         brL,brR=c_menu.getBrackets(rightTxBrackets)
@@ -353,62 +603,64 @@ class c_menu:
             ret.extend(zip(i_l, i_r))
         lst=ret
 
+        width=minWidth
         # vypočítáme maximální délku levého a pravého sloupce
-        width = max(
-            minWidth,
-            max(
-                (
-                    spaceBetweenTexts
-                    if len(i[0]) > 1 and len(i[1]) > 0
-                    else 0
-                )
-                + len(i[0]) + len(i[1])
-                for i in ret
-            )
-        )
+        for i in ret:
+            l=len(text_remove_terminal_ASCII_ESC(i[0]))
+            r=len(text_remove_terminal_ASCII_ESC(i[1]))
+            c= l+r
+            if l>1 and r>0:
+                c+=spaceBetweenTexts
+            width = max(width, c)
 
         # vytvoříme list z width
         ret = []
-        for i in lst:            
-            sp_btw = width - len(i[0])
-            if len(i[0]) > 0 and len(i[1]) > 0:
-                sp_btw = sp_btw - len(i[1])
+        for i in lst:
+            l=text_remove_terminal_ASCII_ESC(i[0])
+            r=text_remove_terminal_ASCII_ESC(i[1])
+            
+            sp_btw = width - len(l)
+            if len(l) > 0 and len(r) > 0:
+                sp_btw = sp_btw - len(r)                
                         
             if sp_btw < 0:
                 raise ValueError(TXT_CMENU_ERR03.format(tx=sp_btw))
             
             # generování řádku se str nebo tuple, výstup bude jen List[str] s konstantní šířkou
-            if i[0] and i[1]:
+            if l and r:
+                # oba sou texty tak append-neme s mezerou mezi
                 ret.append(f"{i[0]}{' ' * sp_btw}{i[1]}")
-            elif i[0] and not i[1]:
+            elif l and not r:
+                # jen levý text
                 # pokud se jedná o jednoznakový znak z `_lineCharList` tak se zopakuje v délce width
-                spl=i[0].strip()
-                spl= spl[0] if len(spl)==1 else ""
-                if not spl:
-                    if len(i[0])==1:
-                        spl=i[0][0] # jedná se o mezeru nebo mezery, tzn mezerový splitter
-                    elif len(i[0])>1:
-                        # doplníme mezery na konec
-                        spl=i[0].ljust(width)
-                        
-                
-                if spl in _lineCharList:
-                    splW=width-len(i[0])+1
-                    ret.append( 
-                        (" " * (width-splW))
-                        +(splW*spl)
-                    )
-                else: # jinak se dorovná mezerami
-                    ret.append(i[0].ljust(width))
+                spl=l.strip() # získáme čisté znaky
+                splW=len(l)-len(spl) # zjistíme počet mezer na začátku
+                if not spl and splW>0:
+                    # pokud je to mezera nebo mezery tak spacer
+                    ret.append( " " * width)
+                else:
+                    pref=spl.startswith("- ") # pokud je to prefix tak použijeme posléze
+                    if pref and len(spl)==3:
+                        spl=spl[2]
+                        splW=0 # oddělovač se kreslí od začátku bez odrážky
+                    # byly přítomné znaky, otestujeme zda je to znak z _lineCharList
+                    if spl in _lineCharList and len(spl)==1:
+                        # pokud je to znak z _lineCharList, tak se zopakuje width krát
+                        # dosadíme mezery na začátek pokud byly
+                        ret.append( " " * splW + (width-splW) * spl )
+                    else: # jinak se dorovná mezerami zprava
+                        ret.append(i[0]+(" " * (width-len(l))))                                        
             else:
-                ret.append(i[1].rjust(width))
+                # jen pravý text
+                # dorovnáme mezerami zleva
+                ret.append( (" " * (width-len(r))) + i[1])
                                 
         return ret, width
 
     @staticmethod
     def printBlok(
-        title_items: Union[List[str], List[Tuple[str, str]], List[List[str]]],
-        subTitle_items: List[str],
+        title_items: Union[c_menu_block_items,List[str], List[Tuple[str, str]], List[List[str]]],
+        subTitle_items: Union[c_menu_block_items,List[str], List[Tuple[str, str]], List[List[str]]],
         charObal: str = "*",
         leftRightLength: int = 3,
         charSubtitle: str = "-",
@@ -422,11 +674,13 @@ class c_menu:
         Vytiskne blok textu s ohraničením nebo bez, podle volby
         
         Parameters:
-            title_items (Union[List[str], List[Tuple[str, str], List[List[str]]]): Položky k vytisknutí, pokud je:
+            title_items (Union[c_menu_block_items,List[str], List[Tuple[str, str]], List[List[str]]]): Položky k vytisknutí, může být:
+                - `c_menu_block_items` identický s `List[Tuple[str, str]]`
                 - `str`, tak se vytiskne zleva doprava
                 - `tuple`, tak se vytiskne index 0 zleva doprava a index 1 zprava doleva
                 - `list` = stejně jako tuple
-            subTitle_items (List[str]): Položky k vytisknutí pod `title_items` (platí stejné typy jako pro `title_items`),  
+            subTitle_items (Union[c_menu_block_items,List[str], List[Tuple[str, str]], List[List[str]]]): Položky podtitulku, může být:
+                (platí stejné typy jako pro `title_items`),  
                 které budou odsazené `charSubtitle` pokud je uveden; pokud je prázdný řetězec `""`,
                 mají stejné zarovnání jako `title_items`
             charObal (str): Znak ohraničení:  
@@ -448,6 +702,9 @@ class c_menu:
             int: délka nejdelšího řádku, vnější rozměr
         
         """
+        title_items = c_menu_block_items(title_items)
+        subTitle_items = c_menu_block_items(subTitle_items)
+        
         # Sanitizace vstupů
         charObal = charObal[0] if isinstance(charObal, str) and charObal else ""
         leftRightLength = constrain(leftRightLength,0,10) if isinstance(leftRightLength, int) else 0
@@ -589,39 +846,43 @@ class c_menu:
 
     def __print(self, lastRet: onSelReturn = None, toOut:list=None) -> int:        
         afterTitle=self.afterTitle
-        if not isinstance(afterTitle,str):
-            afterTitle=""        
-        afterTitle=afterTitle.splitlines()
+        if isinstance(afterTitle,str):            
+            afterTitle=afterTitle.splitlines()
+        afterTitle=c_menu_block_items(afterTitle)
         
         afterMenu=self.afterMenu
-        if not isinstance(afterMenu,str):
-            afterMenu=""
-        afterMenu=afterMenu.splitlines()
+        if isinstance(afterMenu,str):
+            afterMenu=afterMenu.splitlines()
+        afterMenu=c_menu_block_items(afterMenu)
             
         # vygenerujeme menu položky voleb
-        menu_list = self.__getList()
-        x=self.checkItemChoice(menu_list)
+        mx = self.__getList()
+        x=self.checkItemChoice(mx)
         if x:
             raise ValueError(TXT_RPT_CHCS+": "+', '.join(x))
         
-        # ošetříme before a after
-        if not self.title:
-            tt=[]
-        else:
-            tt = self.title
-            if isinstance(tt, str):
-                tt = tt.splitlines()
-            elif not isinstance(tt, (list,tuple)):
-                tt = ["ERROR"]
-            
-        if not self.subTitle:
-            st=[]
-        else:
-            st=self.subTitle
-            if isinstance(self.subTitle, str):                    
-                st = self.subTitle.splitlines()
-            elif not isinstance(self.subTitle, (list,tuple)):
-                st = ["ERROR"]
+        menu_list=[]
+        for item in mx:
+            if isinstance(item, c_menu_title_label):
+                menu_list.extend([
+                    c_menu_item(''),
+                    item,
+                    c_menu_item('')
+                ])
+            elif item is None:
+                menu_list.append(c_menu_item(''))
+            else:
+                menu_list.append(item)
+        
+        tt=self.title
+        if isinstance(tt,str):
+            tt=tt.splitlines()
+        tt=c_menu_block_items(tt)
+        
+        st=self.subTitle
+        if isinstance(st,str):
+            st=st.splitlines()
+        st=c_menu_block_items(st)        
         
         out=[]
         width=self.minMenuWidth
@@ -707,7 +968,7 @@ class c_menu:
 
         while max_count > 0:
             x = ls[pos]
-            if x.enabled and not x.hidden and x.choice:
+            if not x is None and x.enabled and not x.hidden and x.choice:
                 self._selectedItem = x
                 return
             pos = (pos + (1 if forward else -1)) % len(ls)
@@ -723,6 +984,8 @@ class c_menu:
         ch=[]
         err=[]
         for i in list:
+            if i is None:
+                continue
             if not i.hidden and i.enabled and i.choice:
                 if i.choice in ch:
                     err.append(TXT_RPT_CHCS+': '+i.choice)
@@ -731,8 +994,10 @@ class c_menu:
         
     def run_refresh(self,c:str,first:bool=False) -> Union[bool,str]:
         """pokud vrátí string tak se menu ukončí s chybou a vrátí tento string jako chybu"""
+        from .input import setMinMessageWidth
+        
         err=[]
-        if first:
+        if first:            
             if self.onEnterMenu:
                 try:
                     # log.debug(f"onEnterMenu")
@@ -743,27 +1008,32 @@ class c_menu:
                     self.lastReturn = onSelReturn(err=str(e))
                     log.error(f"Exception on onEnterMenu",exc_info=True)
                     err.append(str(e))
-                                    
-        if self.onShowMenu:
-            try:
-                # log.debug(f"onShowMenu")
-                self.onShowMenu()
-            except Exception as e:
-                self.lastReturn = onSelReturn(err=str(e))
-                log.error(f"Exception on onShowMenu",exc_info=True)
-                err.append(str(e))
+                 
+        if self.menuRecycle:           
+            if self.onShowMenu:
+                try:
+                    # log.debug(f"onShowMenu")
+                    self.onShowMenu()
+                except Exception as e:
+                    self.lastReturn = onSelReturn(err=str(e))
+                    log.error(f"Exception on onShowMenu",exc_info=True)
+                    err.append(str(e))
         
         if self._selectedItem is None:
             self.nextItem()
-        self._rowLength = self.__print(self.lastReturn)
-        if self.onShownMenu:
-            try:
-                # log.debug(f"onShownMenu")
-                self.onShownMenu()
-            except Exception as e:
-                self.lastReturn = onSelReturn(err=str(e))
-                log.error(f" Exception on onShownMenu",exc_info=True)
-                err.append(str(e))
+        self._lastCalcMenuWidth = self.__print(self.lastReturn)
+        if self.setInputMessageWitthToLastCalc is True:
+            setMinMessageWidth(self._lastCalcMenuWidth)
+        
+        if self.menuRecycle:
+            if self.onShownMenu:
+                try:
+                    # log.debug(f"onShownMenu")
+                    self.onShownMenu()
+                except Exception as e:
+                    self.lastReturn = onSelReturn(err=str(e))
+                    log.error(f" Exception on onShownMenu",exc_info=True)
+                    err.append(str(e))
         
         if not c:
             print(TXT_PRESS_KEY)
@@ -778,6 +1048,8 @@ class c_menu:
             return False
             
         return True
+
+    menuRecycle:bool=False
 
     def run(self,item:c_menu_item=None) -> Union[None,str]:
         """ Spustí menu 
@@ -796,6 +1068,7 @@ class c_menu:
         c=""
         
         self.selectedItem = None
+        self.menuRecycle=True
         while True: 
             x=self.run_refresh(c,first)
             if isinstance(x,str):                
@@ -898,7 +1171,7 @@ class c_menu:
                 self.lastReturn = onSelReturn(err=f'Exception:\n'+traceback.format_exc())
                 log.error(f" Exception on processing choice",exc_info=True)
             finally:
-                # self._selectedItem = None
+                self.menuRecycle=True
                 pass
                 
             self.selectedItem = None                    
@@ -930,7 +1203,7 @@ class c_menu:
             except Exception as e:
                 self.lastReturn = onSelReturn(err=str(e))
                 log.error(f" Exception on onExitMenu",exc_info=True)
-        log.info(f" <<< Menu '{self.title}' ended ---")
+        log.info(f" <<< Menu END ---")
         return None
     
     def __repr__(self):
@@ -945,8 +1218,8 @@ class c_menu:
 
 def printBlock(
     
-    title_items: Union[List[str], List[Tuple[str, str]], List[List[str]]],
-    subTitle_items: List[str],
+    title_items: Union[c_menu_block_items, List[str], List[Tuple[str, str]], List[List[str]]],
+    subTitle_items: Union[c_menu_block_items, List[str], List[Tuple[str, str]], List[List[str]]],
     charObal: str = "*",
     leftRightLength: int = 3,
     charSubtitle: str = "-",
@@ -960,9 +1233,10 @@ def printBlock(
     Vytiskne blok textu s ohraničením nebo bez, podle volby
     
     Parameters:
-        title_items (Union[List[str], List[Tuple[str, str], List[List[str]]]): Položky k vytisknutí, pokud je:
+        title_items Union[c_menu_block_items, List[str], List[Tuple[str, str], List[List[str]]]: Položky k vytisknutí, pokud je:
+            - `c_menu_block_items` identický s `List[Tuple[str, str]]`
             - `str`, tak se vytiskne zleva doprava
-            - `tuple`, tak se vytiskne index 0 zleva doprava a index 1 zprava doleva
+            - `tuple`, tak se vytiskne index 0 zleva doprava a index 1 zprava doleva, pokud index je, pokud není je nahrazen ''
             - `list` = stejně jako tuple
         subTitle_items (List[str]): Položky k vytisknutí pod `title_items` (platí stejné typy jako pro `title_items`),  
             které budou odsazené `charSubtitle` pokud je uveden; pokud je prázdný řetězec `""`,
