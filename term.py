@@ -4,6 +4,7 @@ import termios
 import time
 from .helper import sleep_ms
 from typing import Union
+import re
 
 _old_settings = None
 
@@ -124,7 +125,7 @@ def getK(timeout: float = None) -> Union[str, None]:
             r = os.read(sys.stdin.fileno(), 1)
     
     if isinstance(r, bytes):
-        return r.decode('utf-8')
+        return r.decode('utf-8',errors='ignore')
     return r
 
 def getKey(
@@ -236,6 +237,16 @@ def reset()->None:
         os.system('stty sane')  # Tento příkaz funguje pouze na systémech UNIX
     except Exception as e:
         pass
+def text_remove_terminal_ASCII_ESC(text:str)->str:
+    """ Vrátí text bez ASCII ESC sekvencí
+    
+    Parameters:
+        text (str): text pro odstranění ASCII ESC sekvencí
+        
+    Returns:
+        str: text bez terminálových ASCII ESC sekvencí
+    """
+    return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', text)
 
 def text_inverse(text:str)->str:
     """ Vrátí text s inverzním zobrazením
