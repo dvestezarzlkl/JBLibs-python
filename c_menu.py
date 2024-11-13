@@ -935,7 +935,7 @@ class c_menu:
         choice=None
         partOfLonger=False
         for item in self.__getList():
-            if item.enabled and not item.hidden and item.choice:
+            if not item is None and  item.enabled and not item.hidden and item.choice:
                 if item.choice == c:
                     if choice is None:
                         choice = item
