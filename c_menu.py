@@ -1009,7 +1009,7 @@ class c_menu:
                     log.error(f"Exception on onEnterMenu",exc_info=True)
                     err.append(str(e))
                  
-        if self.menuRecycle:           
+        if self.menuRecycle:
             if self.onShowMenu:
                 try:
                     # log.debug(f"onShowMenu")
@@ -1071,6 +1071,7 @@ class c_menu:
         self.menuRecycle=True
         while True: 
             x=self.run_refresh(c,first)
+            self.menuRecycle=False
             if isinstance(x,str):                
                 return x
             
@@ -1101,6 +1102,10 @@ class c_menu:
                         # návrat bez chyby a zákazu
                         return                
                 continue # Nebyla detekována akce ESC nebo byl detekován zákaz (False) - čekej na další klávesu
+            # F5 - refresh
+            elif xc == '\x1b[15~':
+                self.menuRecycle=True
+                continue
             elif xc == '\x7f':
                 ## pokud backspace tak vymažeme poslední znak
                 c=c[:-1]
