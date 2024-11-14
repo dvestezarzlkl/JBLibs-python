@@ -2,7 +2,7 @@
 from .lng.default import *
 import os, platform,sys,logging,subprocess,inspect,hashlib
 from importlib import util
-from typing import Union
+from typing import Union,Callable,Union,Tuple
 import configparser,re,psutil
 from select import select as t_sel
 from typing import List
@@ -25,6 +25,15 @@ class c_prcLstn:
     
     def __repr__(self):
         return f"proc: {self.processName}, pid: {self.processID},  u: {self.userName}, tcp ip:port: {self.ip}:{self.port}"
+
+class c_interface:
+    name:str=""
+    ipv4:str=""
+    ipv6:str=""
+    mac:str=""
+
+    def __repr__(self):
+        return f"interface: {self.name}, ipv4: {self.ip}, ipv6: {self.ipv6}, mac: {self.mac}"
 
 def initLogging(file_name:str="app.log",max_bytes: int = 1_000_000, backup_count: int = 3):
     """
@@ -460,4 +469,73 @@ def getListeningPorts(processName:str="node node-red")->List[c_prcLstn]:
                         ret.append(item)                        
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+    return ret
+
+def getUserHome(username: str) -> Union[str,None]:
+    """ vrátí cestu k domovskému adresáři uživatele
+    
+    Parameters:
+        username (str): jméno uživatele
+    
+    Returns:
+        Union[str,None]: cesta k domovskému adresáři uživatele nebo None při chybě bez lomítek na konci
+    """
+    user=sanitizeUserName(username)
+    if user:
+        return f'/home/{user}'
+    return None
+
+def getUserList(filter:Callable[[str],bool]=None,asTuple=False)->Union[ List[str] , List[Tuple[int,str]] ]:
+    """
+    Return list of system users with node config file in hos home directory
+    vrací seznam uživatelů, popřípadě filtrované pomocí funkce `filter`
+    vrací seznam uživatelů nebo indexovaný seznam tuple (index,username)
+    
+    Parameters:
+        filter (callable): filter function syntax: filter(username:str)->bool
+    
+    Returns:
+        List[str]: list of system users
+        List[Tuple[int,str]]: list of tuples (index,username)
+        
+    """
+    ret = [d for d in os.listdir('/home') if os.path.isdir(os.path.join('/home', d))]
+
+    if callable(filter):
+        ret=[d for d in ret if filter(d)]
+    ret.sort()
+    
+    if asTuple:
+        r=[]    
+        for idx, user in enumerate(ret):
+            r.append((idx,user))
+        return r
+
+    return ret
+
+def getInterfaces(noLoop:bool=True)->List[c_interface]:
+    """
+    Return list of network interfaces
+    
+    Returns:
+        List[c_interface]: list of network interfaces
+    """
+    import socket
+    ret = []
+    for iface, addrs in psutil.net_if_addrs().items():
+        item = c_interface()
+        item.name = iface
+
+        for addr in addrs:
+            if addr.family == socket.AF_INET:  # IPv4 address
+                item.ipv4 = addr.address
+            elif addr.family == socket.AF_INET6:  # IPv6 address
+                item.ipv6 = addr.address
+            elif addr.family == psutil.AF_LINK:  # MAC address (Linux specific)
+                item.mac = addr.address
+
+        if noLoop and item.name == 'lo':
+            continue
+        ret.append(item)
+
     return ret
