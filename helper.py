@@ -26,7 +26,7 @@ class c_prcLstn:
     def __repr__(self):
         return f"proc: {self.processName}, pid: {self.processID},  u: {self.userName}, tcp ip:port: {self.ip}:{self.port}"
 
-def initLogging(file_name:str="app.log"):
+def initLogging(file_name:str="app.log",max_bytes: int = 1_000_000, backup_count: int = 3):
     """
     Inicializuje logging pro skript se jménem souboru v parametru
     
@@ -36,13 +36,17 @@ def initLogging(file_name:str="app.log"):
     Returns:
         None
     """
+    from logging.handlers import RotatingFileHandler
     logging.basicConfig(
         level=logging.DEBUG,  # Určuje minimální úroveň záznamů (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
         handlers=[
-            logging.FileHandler(file_name),  # Záznamy se ukládají do souboru 'app.log'
+            # logging.FileHandler(file_name),  # Záznamy se ukládají do souboru 'app.log'
+            RotatingFileHandler(file_name, maxBytes=max_bytes, backupCount=backup_count)
         ]
     )
+    log=logging.getLogger('LOG-INIT')
+    log.info(f"Logging initialized to file '{file_name}', max size: {max_bytes}, backup count: {backup_count}.")
 
 def sanitizeUserName(username: str) -> Union[str,None]:
     """Ošetří jméno uživatele
@@ -81,7 +85,7 @@ def userExists(userName:str,checkWhiteSpace=True)->Union[bool,None]:
     result = subprocess.run(['id', '-u', userName], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return result.returncode == 0
 
-def getLogger(name:str):
+def getLogger(name:str)->logging.Logger:
     """
     Vráti instanci loggeru, pokud ještě nebyl inicializován, inicializuje se viz initLogging()
     
