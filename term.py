@@ -178,14 +178,18 @@ def getKey(
             if ch is None:
                 continue
             # Detect escape sequences for arrow keys
-            if ch == '\x1b':  # ESC character
+            if ch == '\x1b':  # ESC character, max 4 char
                 ch_x = getK(w)
                 if ch_x:
+                    # max další 3 znaky
                     ch += ch_x
-                    ch_x = getK(w)
-                    if ch_x:
-                        ch += ch_x
-                        break
+                    for _ in range(3):
+                        ch_x = getK(w)
+                        if ch_x:
+                            ch += ch_x
+                        else:
+                            break
+                    break
                 else:
                     if ESC_isExit:
                         ch = False
