@@ -169,7 +169,8 @@ class strTime:
         return self.__str__()
     
 class strTimeUSec(strTime):
-    """ jako str time ale pokud inicializujeme s int tak to bere jako uSec"""
+    """ jako str time ale pokud inicializujeme s int tak to bere jako uSec
+    """
     def __init__(self, value: Union[str,int]):
         if isinstance(value, int):
             self._val = value / 1000
@@ -179,6 +180,16 @@ class strTimeUSec(strTime):
             super().__init__(value)
             
 class bytesTx:
+    """ reprezentuje velikost v bytech v textové podobě
+    např. 1K, 1M, 1G, 1T, 1P
+    akceptuje i float hodnoty např. 1.5K, 1.5M, 1.5G, 1.5T, 1.5P
+        - ve float akceptuje i ',' jako oddělovač desetinných míst
+    
+    Examples:
+        >>> b = bytesTx(1024)
+        >>> print(b) # vytiskne '1kB'
+        >>> b2 = bytesTx("1K")
+    """
     val: int = 0
     precision: int = 2
     
@@ -187,7 +198,7 @@ class bytesTx:
         if isinstance(value, int):
             self.val = value
         else:        
-            self.value = self.decode(value)        
+            self.val = self.decode(value)        
         
     @staticmethod
     def decode(fromTx: str) -> int:
@@ -197,26 +208,55 @@ class bytesTx:
 
         fromTx = fromTx.strip()
         if fromTx.isdigit():
+            # Pokud je to číslo, vrátíme ho
             return int(fromTx)
+        
+        # Převede na malá písmena pro zaručení správného převodu
+        fromTx = fromTx.lower()
+        
+        # odstraníme 'B' na konci pokud není samotnou jednotkou
+        if fromTx[-1] == 'b' and len(fromTx) > 1 and fromTx[-2] in 'kmgtpe':
+            fromTx = fromTx[:-1]
 
         # Slovník pro jednotky a jejich hodnoty v bytech
-        units = {'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
+        units = {'k': 1024, 'm': 1024**2, 'g': 1024**3, 't': 1024**4, 'p': 1024**5, 'e': 1024**6}
         
+        # Pokud je jednotka v textu, převedeme
         unit = fromTx[-1]
-        if unit in units and fromTx[:-1].isdigit():
-            return int(fromTx[:-1]) * units[unit]
+        fromTx = fromTx[:-1]
+        # replace ',' with '.'
+        fromTx = fromTx.replace(',', '.')
+        if unit in units:
+            try:
+                return int(float(fromTx) * units[unit])
+            except ValueError:
+                return 0  # Pokud není platná číslice před jednotkou
 
         return 0
+    
+    @property
+    def bytes(self) -> int:
+        """Vrátí velikost v bytech jako int
+
+        Returns:
+            int: Velikost v bytech
+        """
+        return self.val
+    
+    @staticmethod
+    def _v_t_str(v: int, p: int, t:int):
+        v=round(v / t, p)
+        return v if v % 1 else int(v)        
 
     @staticmethod
     def encode(value: int, precision: int = 2) -> str:
         """Převede int na str."""
-        units = ['B', 'K', 'M', 'G', 'T']
+        units = ['B', 'k', 'M', 'G', 'T', 'P', 'E']
         for i in range(len(units)):
             unit_value = 1024 ** i
             if value < unit_value * 1024:
-                return f"{round(value / unit_value, precision)}{units[i]}"
-        return f"{round(value / (1024 ** len(units)), precision)}P"  # V případě větší jednotky než Tera
+                return f"{bytesTx._v_t_str(value,precision,unit_value)}{units[i]}" + ( "" if i == 0 else "B")
+        return f"{bytesTx._v_t_str(value, precision, (1024 ** len(units) ) ) }EB"  # V případě větší jednotky než PB
     
     def get(self) -> int:
         return self.val
@@ -231,6 +271,14 @@ class bytesTx:
         return self.__str__()
         
 class bytes:
+    """ reprezentuje velikost v bytech  
+    inicializace se provádí pomocí int nebo str (číslo může být s jednotkou B, K, M, G, T)
+    
+    Examples:
+        >>> b = bytes(1024)
+        >>> print(b)
+        >>> b2 = bytes("1K")
+    """
     __val: int = 0
     
     def __init__(self, value: Union[str,int]):
