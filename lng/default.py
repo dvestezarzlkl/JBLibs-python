@@ -14,6 +14,7 @@ TXT_CMENU_ERR01 = "Script error, the number on the left and right does not match
 TXT_CMENU_ERR02 = "Script error, tuple expected"
 TXT_CMENU_ERR03 = "Script error, incorrect spaceBetweenTexts setting: {tx}"
 TXT_CMENU_ERR04 = "Unsupported type of print item"
+TXT_CMENU_ERR05 = "Unsupported type of print item, expected c_menu_block_items"
 TXT_INPUT_A     = "Input"
 TXT_INPUT_NEW_PWD = "New password"
 TXT_END         = "End"

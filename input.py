@@ -1,3 +1,4 @@
+import sys
 from .lng.default import * 
 from .helper import loadLng
 from .term import restoreAndClearDown,savePos,getKey,cls
@@ -11,6 +12,8 @@ confirm_choices: list[tuple[str, str]] = [
     ['y', TXT_INPUT_YES],
     ['n', TXT_INPUT_NO],
 ]
+
+_minMessageWidth:int=0
 
 def validate_port(port: Union[int,str], full:bool=False) -> bool:
     """
@@ -52,6 +55,9 @@ def get_username(messagePrefix:None, make_cls: bool=False, maxLength:int=50, min
     Returns:
         str: uživatelské jméno
     """
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
     if not isinstance(maxLength, int):
         maxLength=50
     return get_input(
@@ -93,6 +99,9 @@ def get_input(
             - str: pokud je zadán vstup a je validní
             - None: pokud je zadáno 'q'
     """
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
     err:str=""
     i=[action]
     s=[f"q = {TXT_END}"]
@@ -154,6 +163,9 @@ def get_pwd(action: str = "",make_cls:bool=False, minMessageWidth:int=0) -> str:
     Returns:
         str: password
     """
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
     err=""
     savePos()
     if make_cls:
@@ -196,6 +208,9 @@ def get_pwd_confirm(make_cls:bool=False, minMessageWidth:int=0) -> str:
     Returns:
         str: _description_
     """
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
     while True:
         password = get_pwd(TXT_INPUT_NEW_PWD,make_cls, minMessageWidth)
         if password == None:
@@ -219,6 +234,9 @@ def get_port(make_cls:bool=False, minMessageWidth:int=0) -> int:
     Returns:
         int: číslo portu        
     """
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
     return get_input(
         TXT_INPUT_PORT,
         False,
@@ -240,12 +258,26 @@ def hash_password(password: str) -> str:
     hashed = bcrypt.hashpw( password , salt)
     
     return hashed.decode('utf-8')
+     
+def setMinMessageWidth(width:int) -> None:
+    """Nastaví minimální šířku zprávy pro vstupní funkce"""
+    if not isinstance(width, int):
+        raise ValueError("Parameter width must be integer")
+    global _minMessageWidth
+    _minMessageWidth=width
+
+def getMinMessageWidth() -> int:
+    """Vrátí minimální šířku zprávy pro vstupní funkce"""
+    return _minMessageWidth
         
 def anyKey(RETURN_KeyOny:bool=False, cls:bool=False,minMessageWidth:int=0) -> None:
     """ Čeká na stisk klávesy nebo RETURN v závislosti na volbě, nevyužívá input
     - returnKeyOny: bool - pokud je True, tak se čeká na stisk klávesy RETURN, jinak na jakoukoliv klávesu
     - cls: bool - pokud je True, tak se před čekáním smaže obrazovka
     """
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth
+    
     if cls:
         cls()
     if RETURN_KeyOny:
@@ -264,6 +296,9 @@ def anyKey(RETURN_KeyOny:bool=False, cls:bool=False,minMessageWidth:int=0) -> No
         
 def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
     """ Čeká na potvrzení pomocí klávesy Y nebo N"""
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
     if make_cls:
         cls()
     i=[

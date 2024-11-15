@@ -1,6 +1,6 @@
-# JBLibs
+# JBLibs - python
 
-Soubor pomocných knihoven
+Soubor pomocných knihoven pro python
 
 ## c_menu
 
