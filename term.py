@@ -263,14 +263,13 @@ def text_inverse(text:str)->str:
     """
     return f"\033[7m{text}\033[0m"
 
-def cls()->None:
+def cls(_flush:bool=True)->None:
     """ Vymaže obsah obrazovky pomocí ASCII  
     a resetuje kurzor na začátek obrazovky
     
     Returns:
         None
     """
-    print("\033[2J\033[H", end="")
-    sys.stdout.flush()
+    print("\033[2J\033[H", end="",flush=_flush)
     # \033[2J - Vymaže obrazovku
     # \033[H - Posune kurzor na začátek obrazovky

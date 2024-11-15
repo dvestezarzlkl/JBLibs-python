@@ -1,13 +1,13 @@
 # cspell:ignore updatovat,otrimovaná,otrimujeme,CHCS
 
-from .helper import cls,loadLng
+from .helper import loadLng
 from .lng.default import * 
 import json
 loadLng()
 
 from typing import Callable, Any, Union, List, Tuple
 import traceback
-from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC
+from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC,cls
 from .helper import constrain
 from time import sleep
 
@@ -968,8 +968,8 @@ class c_menu:
         if isinstance(toOut,list):
             toOut.extend(out)
         else:
-            cls()                    
-            print("\n".join(out))
+            cls(False)
+            print("\n".join(out),flush=True)
 
         return width
 
