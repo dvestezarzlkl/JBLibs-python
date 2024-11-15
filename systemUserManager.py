@@ -377,6 +377,7 @@ class sshMng:
                 keys.append(listKeyRow(f[:-4], username))        
         return keys
 
+    @staticmethod
     def showKey(username:str, fileName:str, clear:bool=True)->Union[str, None]:
         """
         Vypíše obsah klíče, public key, tento je na serveru pro ověření
@@ -399,6 +400,7 @@ class sshMng:
         anyKey()
         return None
     
+    @staticmethod
     def showCert(username:str, fileName:str, clear:bool=True)->Union[str, None]:
         """
         Vypíše obsah certifikátu, tento je potřebný pro klienta který se bude připojovat
@@ -418,6 +420,33 @@ class sshMng:
         with open(private_key_path, 'r') as f:
             print(f.read())
             
+        anyKey()
+        return None
+    
+    @staticmethod
+    def changeSystemUserPwd(username: str) -> Union[str, None]:
+        """
+        Změní heslo systémového uživatele
+        
+        Parameters:
+            username (str): jméno uživatele
+            
+        Returns:
+            str: chyba, pokud došlo k chybě
+            None: pokud OK
+        """
+        # Získání nového hesla od uživatele
+        pwd = get_pwd_confirm("Enter new password: ")
+        if not pwd:
+            return "Aborted by user"
+        
+        try:
+            # Použití chpasswd pro změnu hesla uživatele
+            subprocess.run(['chpasswd'], input=f"{username}:{pwd}", text=True, check=True)
+            print(f"Password changed for user {username}.")
+        except subprocess.CalledProcessError as e:
+            log.error(f"Error changing password for user {username}: {e}", exc_info=True)
+            return "Error occurred"
         anyKey()
         return None
 
