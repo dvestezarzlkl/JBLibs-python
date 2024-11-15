@@ -58,10 +58,27 @@ class c_menu_item:
     """ Data, která se předají do funkce onSelect """
 
     onSelect: Callable[["c_menu_item"],onSelReturn] = None
-    """ Funkce, která se zavolá po stisknutí klávesy pro tuto položku menu, návratová hodnota z funkce je předána do funkce onAfterSelect"""
+    """ Funkce, která se zavolá po stisknutí klávesy pro tuto položku menu,
+    návratová hodnota z funkce je předána do funkce onAfterSelect
+    
+    Parameters:
+        item (c_menu_item): vybraný item z menu
+        
+    Returns:
+        onSelReturn: výstupní hodnota
+    """
 
     onAfterSelect: Callable[[onSelReturn,"c_menu_item"], None] = None
-    """ Funkce, která se zavolá po skončení funkce onSelect, návratová hodnota z funkce onSelect je předána do této funkce """
+    """ Funkce, která se zavolá po skončení funkce onSelect,
+    návratová hodnota z funkce onSelect je předána do této funkce
+    
+    Parameters:
+        ret (onSelReturn): návratová hodnota z funkce onSelect
+        item (c_menu_item): vybraný item z menu
+        
+    Returns:
+        None
+    """
 
     enabled:bool=True
     """ Pokud je False, tak položka nereaguje """
@@ -81,6 +98,9 @@ class c_menu_item:
     
     isTitleInverse:bool=False
     """Pokud je True, tak nastavíme isTitle=True se label zobrazený jako titulek zobrazí inverzně"""
+    
+    clearScreenOnSelect:bool=True
+    """Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka"""
     
     _isTitle:bool=False
     _label:str=""
@@ -185,7 +205,8 @@ class c_menu_item:
         atRight:str="",
         isTitle:bool=False,
         labelJustify:str="l",
-        minW:int=0
+        minW:int=0,
+        clearScreenOnSelect:bool=True        
     ):
         self.label = label
         self.choice = choice
@@ -198,6 +219,7 @@ class c_menu_item:
         self.isTitle=isTitle
         self.justifyLabel=labelJustify
         self.minW=minW
+        self.clearScreenOnSelect=clearScreenOnSelect
         
     def __repr__(self):
         r= f"c_menu_item( '{self.label}'"
@@ -394,31 +416,60 @@ class c_menu:
     lastReturn: onSelReturn = None
     """ Poslední návratová hodnota z funkce onSelect """
     
-    onEnterMenu: Callable[[] , Union[str,None] ] = None
-    """ Funkce, která se zavolá před zobrazením menu, jen jednou při prvním zobrazení 
-    `v self._runSelItem` jsou data položky menu `c_menu_item`, která byla vybrána a vstoupila do `run`
-    takže pokud v `c_menu_item` nastavíme property `data`, tak jsou dostupné v celém menu pomocí  
-    `self._runSelItem` jako objekt položky `c_menu_item` a data z tohoto objektu  
-    budou dostupná v `self._mData` jako i v `self._runSelItem.data`
+    onEnterMenu: Callable[['c_menu'] , Union[onSelReturn,str,None] ] = None
+    """ Funkce, která se zavolá před zobrazením menu, a dokáže menu bez zobrazení ukončit, lze použít pro tzv precheck.  
+    Tzn je voláno jen jednou při před prvním zobrazení.
+    - v `self._runSelItem` jsou data položky menu `c_menu_item`, která byla vybrána a vstoupila do `run`
+    - v `self.mData` je reference na data c_menu_item z `_runSelItem`    
     
     POZOR pokud vrátí neprázdný string tak se tím oznamuje aby bylo menu ukončeno s chybou, tzn vrátí se do předchozího
     kam předá tento text jako chybu
+    
+    Parameters:
+        self (c_menu):  instance třídy `c_menu`, doporučuje se funkce z vlastního menu
+        
+    Returns:
+        ret (onSelReturn): tak se návrat z měnu řídí touto proměnnou, POZOR property
+            - `err` jen nastaví chybovou zprávu pod menu, neukončí jej
+            - `ok`  jen zobrazí hlášku pod menu jako info
+            - `endMenu` = True menu ukončí, pokud nastavíme `err` tak se zobrazí chyba `ok` je ignorováno
+        ret (str):   pokud není prázdný tak se vrátí do předchozího menu s chybou
+        ret (False): jen ukončí menu
+        ret (None):  nebo cokoliv jiného nic neovlivní a pokračuje se dál
     """
         
     onShowMenu: Callable[['c_menu'], None] = None
     """ Funkce která se volá pokaždé před zobrazením menu, po zobrazení header-u,
     lze např dynamicky generovat položky menu
     nebo updatovat header podle stavu systému
+    
+    Parameters:
+        self (c_menu): instance třídy `c_menu`, doporučuje se funkce z vlastního menu
+        
+    Returns:
+        None
     """
     
     onShownMenu: Callable[['c_menu'], None] = None
-    """ Funkce, která se zavolá pokaždé po zobrazení menu, před input-em """
+    """ Funkce, která se zavolá pokaždé po zobrazení menu, před input-em
     
-    onExitMenu: Callable[['c_menu'], Union[None|bool]] = None
+    Parameters:
+        self (c_menu): instance třídy `c_menu`, doporučuje se funkce z vlastního menu
+        
+    Returns:
+        None
+    """
+    
+    onExitMenu: Callable[['c_menu'], Union[None,str,bool]] = None
     """ Funkce, která se zavolá po ukončení menu, např volba Back, ne pro Exit  
-    - Pokud funkce vrátí `False` tak se menu neukončí
-    - Pokud vrátí `str` tak se menu ukončí a text je předán do parent menu jako chyby k zobrazení
-    - Pokud vrátí `cokoliv jiného` tak se menu ukončí
+    
+    Parameters:
+        self (c_menu): instance třídy `c_menu`, doporučuje se funkce z vlastního menu
+        
+    Returns:
+        ret (False): jen se menu neukončí - Zákaz ukončení menu
+        ret (str):   pokud není prázdný tak se vrátí do předchozího menu s chybou
+        ret (other): nic neovlivní a pokračuje se v ukončení menu
     """
 
     choiceBack: c_menu_item = c_menu_item(TXT_BACK, "b", lambda i: onSelReturn(endMenu=True), "")
@@ -992,23 +1043,10 @@ class c_menu:
                 ch.append(i.choice)
         return err if len(err)>0 else None
         
-    def run_refresh(self,c:str,first:bool=False) -> Union[bool,str]:
+    def run_refresh(self,c:str) -> Union[bool,str]:
         """pokud vrátí string tak se menu ukončí s chybou a vrátí tento string jako chybu"""
-        from .input import setMinMessageWidth
-        
-        err=[]
-        if first:            
-            if self.onEnterMenu:
-                try:
-                    # log.debug(f"onEnterMenu")
-                    x=self.onEnterMenu()
-                    if isinstance(x,str):
-                        return x
-                except Exception as e:
-                    self.lastReturn = onSelReturn(err=str(e))
-                    log.error(f"Exception on onEnterMenu",exc_info=True)
-                    err.append(str(e))
-                 
+        from .input import setMinMessageWidth        
+        err=[]                 
         if self.menuRecycle:
             if self.onShowMenu:
                 try:
@@ -1069,8 +1107,24 @@ class c_menu:
         
         self.selectedItem = None
         self.menuRecycle=True
+        
+        if self.onEnterMenu:
+            try:
+                x=self.onEnterMenu()
+                if x is False:
+                    return None
+                elif isinstance(x,str):
+                    return x
+                if isinstance(x, onSelReturn):
+                    if x.endMenu:
+                        return x.err if x.err else None
+                    self.lastReturn=x
+            except Exception as e:
+                log.error(f"Exception on onEnterMenu",exc_info=True)
+                return "Exception on onEnterMenu: "+str(e)
+        
         while True: 
-            x=self.run_refresh(c,first)
+            x=self.run_refresh(c)
             self.menuRecycle=False
             if isinstance(x,str):                
                 return x
@@ -1085,7 +1139,8 @@ class c_menu:
             xk=''
             if isinstance(xc,str) and xc:
                 xk=xc[0]
-                            
+            
+            self.lastReturn = None
             # zpracuje escape
             if xc is False:
                 if c:
@@ -1161,6 +1216,8 @@ class c_menu:
                 else:
                     # volej funkci onSelect
                     log.debug(f"onSelect '{item.label}'")
+                    if isinstance(item, c_menu_item) and item.clearScreenOnSelect is True:
+                        cls()
                     self.lastReturn = item.onSelect(item)
                     # zpracuj návratovou hodnotu z funkce onSelect
                     if not isinstance(self.lastReturn, onSelReturn):
