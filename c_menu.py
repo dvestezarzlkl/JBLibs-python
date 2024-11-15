@@ -2,7 +2,7 @@
 
 from .helper import loadLng
 from .lng.default import * 
-import json
+import json,sys
 loadLng()
 
 from typing import Callable, Any, Union, List, Tuple
@@ -1059,7 +1059,8 @@ class c_menu:
         
         if self._selectedItem is None:
             self.nextItem()
-        self._lastCalcMenuWidth = self.__print(self.lastReturn)
+        out=[]
+        self._lastCalcMenuWidth = self.__print(self.lastReturn, out)
         if self.setInputMessageWitthToLastCalc is True:
             setMinMessageWidth(self._lastCalcMenuWidth)
         
@@ -1074,18 +1075,27 @@ class c_menu:
                     err.append(str(e))
         
         if not c:
-            print(TXT_PRESS_KEY)
-        if len(c) > 0:
+            out.append(TXT_PRESS_KEY)
+        if len(c) > 0:            
             ci=text_inverse(f" {c} ")
-            print(TXT_SEL_INFO.format(c=ci))
+            out.append(TXT_SEL_INFO.format(c=ci))
         else:
-            print(TXT_SELECT.format(c=c))
+            out.append(TXT_SELECT.format(c=c))
             
+        ok=True
         if len(err)>0:
-            print("\n".join(err))
-            return False
-            
-        return True
+            out.extend(err)            
+            ok=False
+        
+        # \033[H - nastaví kurzor na začátek obrazovky
+        # \033[J - smaže od kurzoru dolů
+        # \033[K - smaže řádek od kurzoru doprava
+        o="\033[K"+("\n\033[K".join(out))+"\n"
+        sys.stdout.write(
+            f"\033[H{o}\033[J"
+        )
+        
+        return ok
 
     menuRecycle:bool=False
 
