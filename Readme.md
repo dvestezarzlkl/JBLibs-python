@@ -2,6 +2,8 @@
 
 Soubor pomocných knihoven pro python
 
+v 1.2.0
+
 ## c_menu
 
 Knihovna pro tvoření interaktivních a dynamických menu
@@ -34,6 +36,6 @@ Více viz komentáře v knihovně
 
 ## input
 
-Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm
+Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm, select
 
 Víc v komentářích knihovny
