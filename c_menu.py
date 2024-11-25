@@ -518,8 +518,7 @@ class c_menu:
                 povolené hodnoty jsou 0, a pak rozsah 20-100
             
         Raises:
-            ValueError: pokud není menu list nebo obsahuje jiné typy než c_menu_item
-            
+            ValueError: pokud není menu list nebo obsahuje jiné typy než c_menu_item            
         """
         # kontrola items
         if not isinstance(menu, (list, tuple)):
@@ -1163,7 +1162,9 @@ class c_menu:
         
         pokud je to volání menu<>menu a vrátí string, tak se string přenese jako chyba do parent menu a zobrazí
         
-        Po návratu z menu (bez chyby) lze poslední vybranou položku získat z metodou **getLastSelItem**
+        Po návratu z menu:
+            - (bez chyby) lze poslední vybranou položku získat z metodou **getLastSelItem**
+            - šířku lze získat (pokud byla přesažena) metodou **getCalcMenuWidth**
         
         Parameters:
             item (c_menu_item, optional): Položka menu, která byla vybrána. Defaults to None.
@@ -1344,6 +1345,17 @@ class c_menu:
         if isinstance(self._selectedItem,c_menu_item):
             return self._selectedItem
         return None
+    
+    def getCalcWidth(self) -> int:
+        """Vrátí šířku menu po posledním zobrazení
+        
+        Parameters:
+            None
+            
+        Returns:
+            int: šířka menu
+        """
+        return self._lastCalcMenuWidth
                 
     def callExitMenu(self,itm: 'c_menu')->Union[bool,str,None]:
         """Interní funkce  

@@ -337,7 +337,21 @@ class select_item:
         self.choice=choice
         self.data=data
 
-def select(msg: str, items: list[select_item], minMessageWidth:int=0) -> Union[select_item,None]:
+class selectReturn:
+    """Výsledek funkce select"""
+    
+    item: Union[select_item,None] = None
+    """Vybraná položka"""
+    
+    calcWidth: int = 0
+    """Vypočítaná šířka menu - zprávy, pokud je přesaženo minWidth
+    """
+    
+    def __init__(self, item: Union[select_item,None], calcWidth:int):
+        self.item=item
+        self.calcWidth=calcWidth
+
+def select(msg: str, items: list[select_item], minMessageWidth:int=0) ->selectReturn:
     """Zobrazí seznam položek a čeká na výběr jedné z nich  
     POZOR, protože využívá menu, tak maže obrazovku
     
@@ -359,7 +373,7 @@ def select(msg: str, items: list[select_item], minMessageWidth:int=0) -> Union[s
             select_item("První",data="první výběr"),
             select_item("Druhý","dru",data="druhý výběr"),
         ],80)
-        print(x.data if x else "ESC, nebylo nic vybráno")
+        print(x.item.data if x.item else "ESC, nebylo nic vybráno")
         ```
     """
     from .c_menu import c_menu,c_menu_item,onSelReturn
@@ -387,4 +401,4 @@ def select(msg: str, items: list[select_item], minMessageWidth:int=0) -> Union[s
     
     m=c_menu(menuItems,minMessageWidth,True,False,TXT_SELECT_TITLE,msg)
     m.run()
-    return m.getLastSelItem()
+    return selectReturn(m.getLastSelItem(),m.getCalcWidth())
