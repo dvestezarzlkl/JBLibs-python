@@ -74,3 +74,5 @@ TXT_STATUS_STP = "ZASTAVENO"
 TXT_STATUS_NEX = "NEEXISTUJE"
 
 TXT_C_UNIT_noSystemd = "Na tomto systému není 'Systemd' k dispozici."
+
+TXT_SELECT_TITLE = "Vyberte z možností"
