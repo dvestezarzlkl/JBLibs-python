@@ -313,3 +313,78 @@ def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
     if ch == confirm_choices[0][0].lower():
         return True
     return False
+
+class select_item:
+    """Položka pro výběr z více možností pro funkci select
+    """
+    
+    label: str = ""
+    """Zobrazený popisek položky"""
+    
+    choice: str = ""
+    """sekvence k vyprání, max 8 znaků  
+    pokud nezadáme, tzn necháme "", tak se k položce vygeneruje číselné choice
+    """
+    
+    data: any = None
+    """Data která jsou spojená s položkou, ať už je to str, int, dict, list, tuple
+    nebo jiný objekt
+    
+    """
+    
+    def __init__(self, label:str, choice:str="", data:any=None):
+        self.label=label
+        self.choice=choice
+        self.data=data
+
+def select(msg: str, items: list[select_item], minMessageWidth:int=0) -> Union[select_item,None]:
+    """Zobrazí seznam položek a čeká na výběr jedné z nich  
+    POZOR, protože využívá menu, tak maže obrazovku
+    
+    Parameters:
+        msg (str): zpráva která se zobrazí nad seznamem položek
+        items (list[select_item]): seznam položek, striktně se očekává že každá položka bude class select_item
+        make_cls (bool): pokud je True, tak se před zobrazením smaže obrazovka
+        minMessageWidth (int): minimální šířka zprávy
+        
+    Returns:
+        Union[select_item,None]: vybraná položka nebo None pokud uživatel zrušil výběr
+        
+    Raises:
+        ValueError: pokud je některá položka v seznamu jiného typu než select_item
+        
+    Example:
+        ```python
+        x=select("Testovací select",[
+            select_item("První",data="první výběr"),
+            select_item("Druhý","dru",data="druhý výběr"),
+        ],80)
+        print(x.data if x else "ESC, nebylo nic vybráno")
+        ```
+    """
+    from .c_menu import c_menu,c_menu_item,onSelReturn
+    
+    if not minMessageWidth:
+        minMessageWidth=_minMessageWidth    
+    
+    cnt=0
+    for i in range(len(items)):
+        if not isinstance(items[i], select_item):
+            raise ValueError(f"Item at index {i} is not instance of select_item")
+        if not isinstance(items[i].choice, str):
+            items[i].choice = ""
+        else:
+            items[i].choice = items[i].choice.strip()
+            # max 8 znaků
+            if len(items[i].choice) > 8:
+                items[i].choice = items[i].choice[:8]
+        if not items[i].choice:
+            items[i].choice = str(cnt+1)
+            cnt+=1
+        if not isinstance(items[i].label, str):
+            raise ValueError(f"Item at index {i} has not label")
+    menuItems=[ c_menu_item(i.label,i.choice,lambda f: onSelReturn(endMenu=True),data=i.data) for i in items]
+    
+    m=c_menu(menuItems,minMessageWidth,True,False,TXT_SELECT_TITLE,msg)
+    m.run()
+    return m.getLastSelItem()
