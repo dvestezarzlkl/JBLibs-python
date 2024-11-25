@@ -501,9 +501,65 @@ class c_menu:
     
     _selectedItem: c_menu_item = None
 
-    def __init__(self):
-        self.menu = []        
-        pass
+    def __init__(
+        self,
+        menu: list[c_menu_item] = [],
+        minMenuWidth:int=0,
+        esc_is_quit:bool=True,
+        quitEnable:bool=True,
+        title:Union[str,c_menu_block_items]='Menu',
+        subTitle:Union[str,c_menu_block_items]='',
+    ):
+        """Inicializace menu
+        
+        Parameters:
+            menu (list[c_menu_item]): default `[]`, nepovinné, položky menu
+            minMenuWidth (int): default `0`, nepovinné, minimální šířka menu, pokud je nastaveno tak se menu nezmenší pod tuto hodnotu,  
+                povolené hodnoty jsou 0, a pak rozsah 20-100
+            
+        Raises:
+            ValueError: pokud není menu list nebo obsahuje jiné typy než c_menu_item
+            
+        """
+        # kontrola items
+        if not isinstance(menu, (list, tuple)):
+            raise ValueError(TXT_CMENU_ERR06)
+        for i in range(len(menu)):
+            if not isinstance(menu[i], c_menu_item):
+                raise ValueError(TXT_CMENU_ERR07)
+        self.menu = menu
+        
+        if not isinstance(minMenuWidth,int):
+            raise ValueError(TXT_CMENU_ERR08)
+        if minMenuWidth<0:
+            minMenuWidth=0
+        if minMenuWidth>100:
+            minMenuWidth=100
+        if minMenuWidth>0 and minMenuWidth<20:
+            minMenuWidth=20
+        self.minMenuWidth=minMenuWidth
+        
+        if not isinstance(esc_is_quit,bool):
+            raise ValueError(TXT_CMENU_ERR09)
+        self.ESC_is_quit=esc_is_quit
+        
+        if not isinstance(quitEnable,bool):
+            raise ValueError(TXT_CMENU_ERR10)
+        if not quitEnable:
+            self.choiceQuit=None
+            
+        if isinstance(title,str):
+            title=c_menu_block_items(title)
+        if not isinstance(title,c_menu_block_items):
+            raise ValueError(TXT_CMENU_ERR11.format(co="title"))
+        self.title=title
+        
+        
+        if isinstance(subTitle,str):
+            subTitle=c_menu_block_items(subTitle)
+        if not isinstance(subTitle,c_menu_block_items):
+            raise ValueError(TXT_CMENU_ERR11.format(co="subTitle"))
+        self.subTitle=subTitle
 
     def __getList(self) -> list[c_menu_item]:
         """ Vrací seznam položek menu s, pokud není None, back a quit """
@@ -1101,9 +1157,20 @@ class c_menu:
 
     def run(self,item:c_menu_item=None) -> Union[None,str]:
         """ Spustí menu 
-        pokud se spouští z parent menu tak 'item' obsahuje položku menu, která byla vybrána
+        pokud se spouští z parent menu tak 'item' obsahuje položku menu, která byla vybrána,
+        tato položka je zapsána do self._runSelItem a může být použita v rámci tohoto objektu menu, navíc data z této položky
+        jsou zapsána do self._mData a stejně tak mohou být použita v rámci tohoto objektu menu
         
         pokud je to volání menu<>menu a vrátí string, tak se string přenese jako chyba do parent menu a zobrazí
+        
+        Po návratu z menu (bez chyby) lze poslední vybranou položku získat z metodou **getLastSelItem**
+        
+        Parameters:
+            item (c_menu_item, optional): Položka menu, která byla vybrána. Defaults to None.
+            
+        Returns:
+            Union[None,str]: None pokud je vše v pořádku, jinak string s chybou
+        
         """
         self._runSelItem=item
         self._mData=None
@@ -1162,9 +1229,11 @@ class c_menu:
                     e=self.callExitMenu(item)
                     if isinstance(e,str):
                         # chybu předáme
+                        self._selectedItem=None # zrušíme výběr je to EXIT
                         return e
                     if not x is False:
                         # návrat bez chyby a zákazu
+                        self._selectedItem=None # zrušíme výběr je to EXIT
                         return                
                 continue # Nebyla detekována akce ESC nebo byl detekován zákaz (False) - čekej na další klávesu
             # F5 - refresh
@@ -1246,7 +1315,6 @@ class c_menu:
                 self.menuRecycle=True
                 pass
                 
-            self.selectedItem = None                    
             if item.onAfterSelect:
                 try:
                     item.onAfterSelect(self.lastReturn,item)
@@ -1260,9 +1328,36 @@ class c_menu:
                     return e
                 if not x  is False:
                     return
+            
+            self._selectedItem = None
             sleep(0.25)
+       
+    def getLastSelItem(self) -> Union[None,c_menu_item]:
+        """Vrátí poslední vybranou položku menu
+        
+        Parameters:
+            None
+            
+        Returns:
+            Union[None,c_menu_item]: None pokud není vybrána žádná položka, jinak c_menu_item
+        """
+        if isinstance(self._selectedItem,c_menu_item):
+            return self._selectedItem
+        return None
                 
     def callExitMenu(self,itm: 'c_menu')->Union[bool,str,None]:
+        """Interní funkce  
+        Zavolá funkci onExitMenu a zpracuje návratovou hodnotu
+        
+        Parameters:
+            itm (c_menu): položka menu, která byla vybrána
+            
+        Returns:
+            Union[bool,str,None]: návrat je:
+                - **False** pokud se nemá ukončit menu
+                - **string** s chybou pokud se má ukončit s chybou,
+                - **None** pokud se má ukončit bez chyby
+        """
         if self.onExitMenu:
             try:
                 x=self.onExitMenu()
