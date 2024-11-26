@@ -1,3 +1,7 @@
+from .lng.default import * 
+from .helper import loadLng
+loadLng()
+
 import os
 import subprocess
 from libs.JBLibs.input import get_username, get_pwd_confirm, confirm, anyKey, get_input
@@ -62,35 +66,35 @@ class sshMng:
         Create a new system user.
         """
         
-        username = get_username("Enter username: ",True)
+        username = get_username(f"{TXT_SSH_MNG_001}: ",True)
         if not username:
-            return "Aborted by user"
+            return TXT_ABORTED
 
         username = username.strip()
         if userExists(username):
-            print(f"User {username} already exists.")
+            print(TXT_SSH_MNG_002.format(name=username))
             anyKey()
-            return "Aborted by user"
+            return TXT_ABORTED
 
-        pwd = get_pwd_confirm("Enter password: ")
+        pwd = get_pwd_confirm(f"{TXT_SSH_MNG_005}: ")
         if not pwd:
-            return "Aborted by user"
+            return TXT_ABORTED
 
         try:
             # Vytváření systémového uživatele
-            log.debug(f"Creating user {username}")
+            log.debug(TXT_SSH_MNG_003.format(name=username))
             subprocess.run(['useradd', '-m', '-s', '/bin/bash', username], check=True)
             subprocess.run(['chpasswd'], input=f"{username}:{pwd}", text=True, check=True)
 
             # Nastavení SSH adresáře
             sshMng.repairSshFile(username)
 
-            print(f"User {username} created.")
+            print(TXT_SSH_MNG_004.format(name=username))
         except subprocess.CalledProcessError as e:
             log.error(f"Error creating user {username}: {e}", exc_info=True)
-            return "Error occurred"
+            return f"{TXT_ERROR_OCCURRED}: {e}"
         
-        print("System user created.")
+        print(TXT_SSH_MNG_006)
         anyKey()
     
     @staticmethod
@@ -119,7 +123,7 @@ class sshMng:
             subprocess.run(['chmod', '700', ssh_manager_dir], check=True)
             subprocess.run(['chmod', '600', authorized_keys], check=True)
         except Exception as e:
-            log.error(f"Error repairing SSH directory for user {username}: {e}", exc_info=True)
+            log.error(f"{TXT_SSH_MNG_007} {username}: {e}", exc_info=True)
             raise    
     
     @staticmethod
@@ -155,22 +159,22 @@ class sshMng:
         """
         if not (ssh_manager_dir:=sshMng.getDirPath_sshManager(username,True)):
             log.error(f"SSH Manager directory for user {username} does not exist.")
-            return "SSH Manager directory is missing."
+            return TXT_SSH_MNG_008
         
-        cert_name = get_input("Enter certificate name: ").strip()
+        cert_name = get_input(f"{TXT_SSH_MNG_010}: ").strip()
         cert_name += "_key"
         private_key = os.path.join(ssh_manager_dir, f"{cert_name}")
         public_key = f"{private_key}.pub"
         
         if sshMng.certExists(username, cert_name):
             log.error(f"Certificate for user {username} already exists.")
-            return f"Certificate {private_key} already exists."
+            return TXT_SSH_MNG_009.format(key=cert_name)
         
         pwd=None
-        if confirm("Do you want to set a password for the certificate?"):
-            pwd = get_pwd_confirm("Enter password: ")
+        if confirm(TXT_SSH_MNG_011):
+            pwd = get_pwd_confirm(f"{TXT_SSH_MNG_005}: ")
             if not pwd:
-                return "Aborted by user"
+                return TXT_ABORTED
         
         try:           
             # Vytvoření SSH klíče pomocí ssh-keygen
@@ -188,7 +192,7 @@ class sshMng:
             subprocess.run(['chown', f"{username}:{username}", private_key, public_key], check=True)
             subprocess.run(['chmod', '600', private_key], check=True)
             subprocess.run(['chmod', '644', public_key], check=True)
-            print(f"Certificate created for user {username} with name {cert_name}.")
+            print(TXT_SSH_MNG_012.format(name=username, cert=cert_name))                  
             anyKey()
         except subprocess.CalledProcessError as e:
             log.error(f"Error creating SSH key for user {username}: {e}", exc_info=True)
@@ -209,10 +213,9 @@ class sshMng:
         """
         if not (ssh_manager_dir:=sshMng.getDirPath_sshManager(userName,True)):
             log.error(f"SSH Manager directory for user {userName} does not exist.")
-            return "SSH Manager directory is missing."
+            return TXT_SSH_MNG_014
         
-        if confirm(f"Delete certificate {certName} from user {userName}"):        
-            
+        if confirm(TXT_SSH_MNG_013.format(name=userName, cert=certName)):            
             if (e:=sshMng.delKey(userName, certName, False, True)):
                 return e
                         
@@ -220,21 +223,21 @@ class sshMng:
             public_key = f"{private_key}.pub"
             
             if not os.path.isfile(private_key):
-                print(f"Private key {private_key} does not exist.")
+                print(TXT_SSH_MNG_015.format(key=private_key))
             
             if not os.path.isfile(public_key):
-                print(f"Public key {public_key} does not exist.")
+                print(TXT_SSH_MNG_016.format(key=public_key))
             
             try:
                 if os.path.isfile(private_key):
                     os.remove(private_key)
                 if os.path.isfile(public_key):
                     os.remove(public_key)
-                print(f"Certificate {certName} deleted for user {userName}.")
+                print(TXT_SSH_MNG_017.format(name=userName, cert=certName))
                 anyKey()
             except Exception as e:
                 log.error(f"Error deleting certificate for user {userName}: {e}", exc_info=True)
-                return "Cannot delete certificate. See log for details."
+                return TXT_SSH_MNG_018
         return None
     
     @staticmethod
@@ -284,14 +287,14 @@ class sshMng:
             None: pokud OK
         """
         if sshMng.checkKeyIncluded(username, fileName):
-            return "Key already included."
+            return TXT_SSH_MNG_019
         
         if not (ssh_manager_dir := sshMng.getDirPath_sshManager(username, True)):
-            return "SSH Manager directory is missing."
+            return TXT_SSH_MNG_020
         
         public_key_path = os.path.join(ssh_manager_dir, f"{fileName}.pub")
         if not os.path.isfile(public_key_path):
-            return f"Public key {public_key_path} does not exist."
+            return TXT_SSH_MNG_021.format(key_path=public_key_path)
         
         with open(public_key_path, 'r') as key_file:
             public_key = key_file.read().strip()
@@ -300,7 +303,7 @@ class sshMng:
         with open(authorized_keys, 'a') as f:
             f.write(public_key + '\n')
         
-        print(f"Key {fileName} added to authorized_keys for user {username}.")
+        print(TXT_SSH_MNG_022.format(key=fileName, name=username))
         anyKey()
         return None
     
@@ -321,14 +324,14 @@ class sshMng:
         
         # read public key do var for comparison
         if not (pub := sshMng.getDirPath_sshManager(username,True)):
-            return "SSH Manager directory is missing."
+            return TXT_SSH_MNG_023
         
         if not (authorized_keys := sshMng.getFilePath_auth(username)):
-            return f"Authorized keys file for user {username} does not exist."
+            return TXT_SSH_MNG_024.format(name=username)
         
         pub = os.path.join(pub, f"{fileName}.pub")
         if not os.path.isfile(pub):
-            return f"Public key {pub} does not exist."
+            return TXT_SSH_MNG_025.format(pub=pub)
         
         pub = open(pub, 'r').read().strip()
         
@@ -344,15 +347,15 @@ class sshMng:
             f.write(keys)
         
         if key_found:
-            print(f"Key {fileName} removed from authorized_keys for user {username}.")
+            print(TXT_SSH_MNG_026.format(key=fileName, name=username))
             if any_key:
                 anyKey()
             return None
         else:
             if ignoreKeyNotIncluded:
                 return None
-            return f"Key {fileName} not found in authorized_keys for user {username}."
-    
+            return TXT_SSH_MNG_027.format(key=fileName, name=username)
+            
     @staticmethod
     def getKeyList(username) -> Union['listKeyRow', None]:
         """
@@ -388,11 +391,11 @@ class sshMng:
         """
         cls()
         if not (d := sshMng.getDirPath_sshManager(username)):
-            return f"SSH Manager directory for user {username} does not exist."
+            return TXT_SSH_MNG_028.format(name=username)
         
         public_key_path = os.path.join(d, f"{fileName}.pub")
         if not os.path.isfile(public_key_path):
-            return f"Public key {public_key_path} does not exist."
+            return TXT_SSH_MNG_029.format(key_path=public_key_path)
         
         with open(public_key_path, 'r') as f:
             print(f.read())
@@ -411,11 +414,11 @@ class sshMng:
         """
         cls()
         if not (d := sshMng.getDirPath_sshManager(username)):
-            return f"SSH Manager directory for user {username} does not exist."
+            return TXT_SSH_MNG_030.format(name=username)
         
         private_key_path = os.path.join(d, f"{fileName}")
         if not os.path.isfile(private_key_path):
-            return f"Private key {private_key_path} does not exist."
+            return TXT_SSH_MNG_031.format(key_path=private_key_path)
         
         with open(private_key_path, 'r') as f:
             print(f.read())
@@ -436,19 +439,91 @@ class sshMng:
             None: pokud OK
         """
         # Získání nového hesla od uživatele
-        pwd = get_pwd_confirm("Enter new password: ")
+        pwd = get_pwd_confirm(f"{TXT_SSH_MNG_032}: ")
         if not pwd:
-            return "Aborted by user"
+            return TXT_ABORTED
         
         try:
             # Použití chpasswd pro změnu hesla uživatele
             subprocess.run(['chpasswd'], input=f"{username}:{pwd}", text=True, check=True)
-            print(f"Password changed for user {username}.")
+            print( TXT_SSH_MNG_033.format(name=username))
         except subprocess.CalledProcessError as e:
-            log.error(f"Error changing password for user {username}: {e}", exc_info=True)
-            return "Error occurred"
+            log.error(
+                TXT_SSH_MNG_034.format(name=username, e=e),
+                exc_info=True
+            )
+            return TXT_ERROR_OCCURRED
         anyKey()
         return None
+
+    @staticmethod    
+    def has_sudo_privileges(username:str) -> Union[bool,str]:
+        """Ověří, zda má uživatel sudo práva
+        
+        Parameters:
+            username (str): jméno uživatele
+            
+        Returns:
+            bool: True pokud má sudo práva, False pokud nemá
+            str: chyba, pokud došlo k chybě
+        """
+        try:
+            # Použijeme příkaz getent group sudo, který vrátí uživatele ve skupině sudo
+            result = subprocess.run(['getent', 'group', 'sudo'], capture_output=True, text=True)
+            users_in_sudo_group = result.stdout
+
+            if username in users_in_sudo_group:
+                return True
+            else:
+                return False
+
+        except subprocess.CalledProcessError:
+            return TXT_ERROR_OCCURRED
+        
+    @staticmethod
+    def add_sudo_privileges(username)->Union[str, None]:
+        """Přidá uživateli sudo práva
+        
+        Parameters:
+            username (str): jméno uživatele
+            
+        Returns:
+            str: chyba, pokud došlo k chybě
+            None: pokud OK
+        """
+        x=sshMng.has_sudo_privileges(username)
+        if isinstance(x,str):
+            return x
+        elif x:
+            return None
+        try:
+            subprocess.run(['usermod', '-aG', 'sudo', username], check=True)            
+            return None
+        except subprocess.CalledProcessError as e:
+            log.error(f"Error adding user {username} to sudo group: {e}", exc_info=True)
+            return TXT_ERROR_OCCURRED
+    
+    def remove_sudo_privileges(username:str)->Union[str, None]:
+        """Odebere uživateli sudo práva
+        
+        Parameters:
+            username (str): jméno uživatele
+            
+        Returns:
+            str: chyba, pokud došlo k chybě
+            None: pokud OK
+        """
+        x=sshMng.has_sudo_privileges(username)
+        if isinstance(x,str):
+            return x
+        elif not x:
+            return None
+        try:
+            subprocess.run(['sudo', 'deluser', username, 'sudo'], check=True)
+            return None
+        except subprocess.CalledProcessError as e:
+            log.error(f"Chyba při odebírání uživatele ze skupiny sudo: {e}", exc_info=True)
+            return TXT_ERROR_OCCURRED
 
 class listKeyRow:
     userName:str=""
@@ -535,6 +610,11 @@ class sshUser:
         """Počet klíčů pro uživatele"""
         return len(self.keys) if self.keys else 0
     
+    @property
+    def hasSudo(self)->bool:
+        """True pokud uživatel má sudo práva"""
+        return sshMng.has_sudo_privileges(self.userName)
+    
     def __init__(self,userName:str):
         self._userName=userName
         self.refresh()
@@ -547,7 +627,7 @@ class sshUser:
             self._keys=[]
             
     def __repr__(self):
-        return f"{self.userName} ({self.keyCount})"
+        return f"{self.userName} (keys: {self.keyCount})" + (" sudo" if self.hasSudo else "")
             
     def createCerKey(self)->Union[str, None]:
         """Vytvoří certifikát pro uživatele"""
