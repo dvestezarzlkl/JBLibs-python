@@ -1286,6 +1286,7 @@ class c_menu:
             try:
                 if isinstance(item.onSelect,c_menu):
                     # detekováno submenu, zpracuj
+                    cls()
                     log.debug(f"Sub menu '{item.label}' started ---")
                     e=item.onSelect.run(item)
                     # zpracuj návratovou hodnotu ze submenu
@@ -1370,6 +1371,7 @@ class c_menu:
                 - **string** s chybou pokud se má ukončit s chybou,
                 - **None** pokud se má ukončit bez chyby
         """
+        cls()
         if self.onExitMenu:
             try:
                 x=self.onExitMenu()
