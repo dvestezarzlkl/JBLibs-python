@@ -295,7 +295,16 @@ def anyKey(RETURN_KeyOny:bool=False, cls:bool=False,minMessageWidth:int=0) -> No
                 break     
         
 def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
-    """ Čeká na potvrzení pomocí klávesy Y nebo N"""
+    """ Čeká na potvrzení pomocí klávesy Y nebo N
+    
+    Parameters:
+        msg (str): zpráva která se zobrazí uživateli
+        make_cls (bool): pokud je True, tak se před zobrazením smaže obrazovka
+        minMessageWidth (int): minimální šířka zprávy
+    Returns:
+        bool: True pokud bylo potvrzeno, jinak False
+    
+    """
     if not minMessageWidth:
         minMessageWidth=_minMessageWidth    
     
