@@ -505,7 +505,7 @@ class c_menu:
         self,
         menu: list[c_menu_item] = [],
         minMenuWidth:int=0,
-        esc_is_quit:bool=True,
+        esc_is_quit:bool=None, # pokud None tak se použije self.ESC_is_quit
         quitEnable:bool=True,
         title:Union[str,c_menu_block_items]='Menu',
         subTitle:Union[str,c_menu_block_items]='',
@@ -538,9 +538,10 @@ class c_menu:
             minMenuWidth=20
         self.minMenuWidth=minMenuWidth
         
-        if not isinstance(esc_is_quit,bool):
+        if not isinstance(esc_is_quit,bool) and esc_is_quit is not None:
             raise ValueError(TXT_CMENU_ERR09)
-        self.ESC_is_quit=esc_is_quit
+        if not esc_is_quit is None:
+            self.ESC_is_quit=esc_is_quit
         
         if not isinstance(quitEnable,bool):
             raise ValueError(TXT_CMENU_ERR10)
