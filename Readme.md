@@ -1,6 +1,6 @@
 # JBLibs - python
 
-Soubor pomocných knihoven pro python
+Soubor pomocných knihoven pro python 
 
 v1.2.6
 
