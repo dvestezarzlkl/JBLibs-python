@@ -2,7 +2,7 @@
 
 Soubor pomocných knihoven pro python
 
-v 1.2.5
+v1.2.6
 
 ## c_menu
 
