@@ -8,6 +8,8 @@ from select import select as t_sel
 from typing import List
 
 __LoggerInit:bool=False
+__myLog:logging.Logger|None=None
+"""logger pro tento helper"""
 
 class c_prcLstn:
     processName:str=""
@@ -35,7 +37,21 @@ class c_interface:
     def __repr__(self):
         return f"interface: {self.name}, ipv4: {self.ip}, ipv6: {self.ipv6}, mac: {self.mac}"
 
-def initLogging(file_name:str="app.log",max_bytes: int = 1_000_000, backup_count: int = 3):
+def getMainScriptDir()->str:
+    """
+    Vrátí cestu ke složce, kde je hlavní spouštěcí skript
+    
+    Returns:
+        str: cesta ke složce s hlavním skriptem
+    """
+    if getattr(sys, 'frozen', False):
+        # Pokud je aplikace zabalena pomocí PyInstaller
+        return os.path.dirname(sys.executable)
+    else:
+        # Pokud je aplikace spuštěna jako běžný Python skript
+        return os.path.dirname(os.path.abspath(sys.argv[0]))
+
+def initLogging(i_file_name:str="app.log",max_bytes: int = 1_000_000, backup_count: int = 3, toConsole: bool = False)->None:
     """
     Inicializuje logging pro skript se jménem souboru v parametru
     
@@ -45,17 +61,60 @@ def initLogging(file_name:str="app.log",max_bytes: int = 1_000_000, backup_count
     Returns:
         None
     """
+    global __LoggerInit
+    
+    # pokud exituje LOG_DIR z configu tak použijeme tento adresář
+    # pokud je None tak se použije adresář aplikace
+    import libs.config as cfg
+    
+    file_name=os.path.join(getMainScriptDir(),'logs',i_file_name) # defaultní cesta
+    
+    # pokud neexistuje logdir pokusíme se jeje vytvořit
+    if cfg.LOG_DIR and not os.path.exists(cfg.LOG_DIR):
+        try:
+            os.makedirs(cfg.LOG_DIR, exist_ok=True)
+            # nastavíme pro všechny
+            os.chmod(cfg.LOG_DIR, 0o755)
+            print(f"Created log dir '{cfg.LOG_DIR}'.", file=sys.stderr)
+        except Exception as e:
+            print(f"Could not create log dir '{cfg.LOG_DIR}': {e}", file=sys.stderr)
+    
+    # pokud existuje a je writable tak použijeme tento adresář
+    if cfg.LOG_DIR and os.path.exists(cfg.LOG_DIR) and os.path.isdir(cfg.LOG_DIR):
+        if not os.access(cfg.LOG_DIR, os.W_OK):
+            print(f"Log dir '{cfg.LOG_DIR}' is not writable, using script dir instead.", file=sys.stderr)
+        else:
+            file_name=os.path.join(cfg.LOG_DIR,i_file_name)
+    
     from logging.handlers import RotatingFileHandler
-    logging.basicConfig(
-        level=logging.DEBUG,  # Určuje minimální úroveň záznamů (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-        handlers=[
-            # logging.FileHandler(file_name),  # Záznamy se ukládají do souboru 'app.log'
-            RotatingFileHandler(file_name, maxBytes=max_bytes, backupCount=backup_count)
-        ]
+    
+    # --- Handlery ---
+    file_handler = RotatingFileHandler(file_name, maxBytes=max_bytes, backupCount=backup_count)    
+
+    # Formát pro oba
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
     )
+    file_handler.setFormatter(formatter)
+
+    handlers=[
+        file_handler
+    ]
+    if toConsole:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        handlers.append(console_handler)
+
+    # --- Logging config ---
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=handlers
+    )
+    
     log=logging.getLogger('LOG-INIT')
     log.info(f"Logging initialized to file '{file_name}', max size: {max_bytes}, backup count: {backup_count}.")
+    
+    __LoggerInit=True
 
 def sanitizeUserName(username: str) -> Union[str,None]:
     """Ošetří jméno uživatele
@@ -113,8 +172,12 @@ def getLogger(name:str)->logging.Logger:
         __LoggerInit=True
     return logging.getLogger(name)
 
-log = logging.getLogger(__name__)
-    
+def getMyLog()->logging.Logger:    
+    global __myLog
+    if __myLog is None:
+        __myLog=getLogger('HELPER')
+    return __myLog
+
 def isSystemLinux()->bool:
     """
     Check if system is Linux
@@ -195,6 +258,7 @@ def setLng(lng:str='cs-CZ')->None:
     Returns:
         None
     """
+    log=getMyLog()
     if not isinstance(lng,str):
         log.error("Language must be a string.")
         return
@@ -216,6 +280,7 @@ def loadLng()->None:
         None        
     """
     try:
+        log=getMyLog()
         # Získáme cestu souboru, ze kterého byla funkce volána
         frame_stack = inspect.stack()
         if len(frame_stack) < 2:
@@ -365,6 +430,7 @@ def load_config()->None:
     Raises:
         FileNotFoundError: detailní popis chyby
     """
+    log=getMyLog()
     # Získat cestu ke složce, kde je hlavní skript spuštěn
     script_dir = os.getcwd()
     config_path = os.path.join(script_dir, "config.ini")
@@ -539,3 +605,56 @@ def getInterfaces(noLoop:bool=True)->List[c_interface]:
         ret.append(item)
 
     return ret
+
+def waitForSec(seconds:float, callableCheckToStopSec:callable=None, callableCheckToStopLoop:callable=None)->int:
+    """
+    Čeká zadaný počet sekund, ale reaguje na SIGINT a SIGTERM
+    a každou sekundu zapíše do logu že čeká.
+    
+    Parameters:
+        seconds (float): počet sekund k čekání
+        callableCheckToStopSec (callable, optional): Vrací True pro stop čekání  
+            - nepovinná funkce, která se volá každou sekundu,
+            - pokud vrátí True, tak se čekání přeruší a funkce vrátí True - protože to není přerušení signálem,
+            - je to pomocná funkce pro případ že chcete čekání přerušit jiným způsobem než signálem, třeba že byla
+            splněna určitá podmínka, že už se nemusí čekat.
+        callableCheckToStopLoop (callable, optional): Stejná funkce jako callableCheckToStopSec, ale volá se v každé iteraci smyčky
+        
+    Returns:
+        bool: vrací:
+                - 0 pokud bylo vše OK a proběhlo celé čekání,
+                - 1 pokud bylo čekání přerušeno signálem,
+                - 2 pokud bylo čekání přerušeno callableCheckToStop vracející
+                - 9 pokud bylo zadáno <=0 sekund, takže se nečekalo vůbec.
+        
+    """    
+    log = getMyLog()
+
+    import time
+    import libs.run_vars as gVars
+    
+    if(seconds<=0):
+        return 9
+    
+    log.info(f"Waiting for {seconds} seconds (can be interrupted with Ctrl-C)...")
+    t0=time.time()
+    dif=0
+    sec=0
+    while not gVars.getSTOP() and dif<seconds:
+        time.sleep(.1)
+        if int(dif)>sec:
+            sec=int(dif)
+            log.info(f"  ... waited {int(dif)} seconds ...")
+            if callableCheckToStopSec and callableCheckToStopSec():
+                log.info(" - Wait interrupted by callableCheckSec.")
+                return 2
+        if callableCheckToStopLoop and callableCheckToStopLoop():
+            log.info(" - Wait interrupted by callableCheckLoop.")
+            return 2
+        dif=time.time()-t0
+    if gVars.getSTOP():
+        log.info(" - Wait interrupted by signal.")
+        return 1
+    else:
+        log.info(" - Wait completed.")
+        return 0

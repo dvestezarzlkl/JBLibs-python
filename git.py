@@ -2,7 +2,7 @@ import subprocess
 import os
 import getpass
 from typing import Optional
-import libs.config as cfg
+import libs.config as cfg # závislost na konfiguračních props, viz kiosk projekt
 from libs.helper import getLogger
 import re
 from pathlib import Path
@@ -287,7 +287,8 @@ class git:
             return msg
 
     def checkAll(self) -> bool:
-        """Zkontroluje všechny repozitáře, vrátí True pokud nějaký obsahuje update
+        """Spec funkce pro KIOSK s node-red
+        Zkontroluje všechny repozitáře, vrátí True pokud nějaký obsahuje update
         Arguments:
             None
         Returns:
@@ -300,7 +301,8 @@ class git:
         return False
 
     def updateAll(self) -> tuple[Optional[str], int]:
-        """Provede update všech repozitářů, pokud jsou dostupné změny.
+        """Spec funkce pro KIOSK s node-red  
+        Provede update všech repozitářů, pokud jsou dostupné změny.
         Arguments:
             None
         Returns:
