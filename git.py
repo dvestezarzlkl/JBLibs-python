@@ -1,9 +1,8 @@
 import subprocess
 import os
 import getpass
-from typing import Optional
-import libs.config as cfg # závislost na konfiguračních props, viz kiosk projekt
-from libs.helper import getLogger
+from typing import Optional,Callable
+from libs.JBLibs.helper import getLogger
 import re
 from pathlib import Path
 
@@ -218,12 +217,18 @@ class git:
             log.error(f"  ! {path}: selhalo zjištění rozdílu vůči {upstream}. {err}")
             return False
 
-    def update(self, path: str, user: Optional[str] = None) -> Optional[str]:
+    def update(
+            self,
+            path: str,
+            user: Optional[str] = None,
+            onFinish:Optional[Callable[[str,str],None]]=None
+        ) -> Optional[str]:
         """Provede update (git pull), pokud jsou dostupné změny.
            Vrací None pokud je vše v pořádku, jinak chybový text.
         Arguments:
             path (str): cesta k git repozitáři
             user (str | None): uživatel systému pod kterým spustit příkaz, pokud None tak se veme aktuální uživatel
+            onFinish (Callable[[str,str],None] | None): funkce **(userName,currPath)->None**, volatelná funkce která se zavolá po úspěšnémdokončení update
         Returns:
             str | None: None pokud je vše v pořádku, jinak chybový text
         """
@@ -236,8 +241,6 @@ class git:
             remote, remote_branch = upstream.split("/", 1)
         else:
             remote, remote_branch = "origin", self._get_branch(path, user)
-
-        isRoot=user=="root"
 
         log.info(f" ******* Aktualizuji {path} ({remote}/{remote_branch}) ... *******")
 
@@ -261,63 +264,10 @@ class git:
                 log.exception(e)
                 log.error(f"{path}: výjimka při aktualizaci submodulů")
             
-            import libs.config as cfg
-            if not isRoot:
-                # pokud je to root, tak aktualizujeme mtime na souboru NODE_RED_RESTART_FILE aby se provedl restart démona
-                try:
-                    os.utime(cfg.NODE_RED_RESTART_FILE)
-                    log.info(f"{path}: updated mtime of NODE_RED_RESTART_FILE to trigger Node-RED restart.")
-                except Exception as e:
-                    log.error(f"{path}: failed to update mtime of NODE_RED_RESTART_FILE: {e}")
-                    log.exception(e)
-            else:
-                # je to ruut takže vyrestartuejem démona, tzn aktualizujeme mtime na souboru request_restart_me
-                try:
-                    os.utime(cfg.REQUEST_RESTART_ME_FILE)
-                    log.info(f"{path}: updated mtime of REQUEST_RESTART_ME_FILE to trigger script restart.")
-                except Exception as e:
-                    log.error(f"{path}: failed to update mtime of REQUEST_RESTART_ME_FILE: {e}")
-                    log.exception(e)
-                
-            
+            if onFinish:
+                onFinish(user,path)
             return None
         else:
             msg = f"{path}: aktualizace selhala: {err or out}"
             log.error(msg)
             return msg
-
-    def checkAll(self) -> bool:
-        """Spec funkce pro KIOSK s node-red
-        Zkontroluje všechny repozitáře, vrátí True pokud nějaký obsahuje update
-        Arguments:
-            None
-        Returns:
-            bool: True pokud je nějaký update, jinak False
-        """
-        for path, desc, user in cfg.GIT_UPDATES:
-            # log.info(f"Kontroluji {desc} ({path} pod {user})")
-            if self.check(path, user):
-                return True
-        return False
-
-    def updateAll(self) -> tuple[Optional[str], int]:
-        """Spec funkce pro KIOSK s node-red  
-        Provede update všech repozitářů, pokud jsou dostupné změny.
-        Arguments:
-            None
-        Returns:
-            tuple:
-                - str | None: None pokud je vše v pořádku, jinak chybový text
-                - int: počet úspěšně aktualizovaných repozitářů
-        """
-        o = ""
-        u = 0
-        for path, desc, user in cfg.GIT_UPDATES:
-            # log.info(f"Kontroluji {desc} ({path} pod {user})")
-            result = self.update(path, user)
-            if result:
-                o += result + ". "
-                log.warning(result)
-            else:
-                u += 1
-        return (o if o else None, u)
