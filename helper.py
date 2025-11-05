@@ -65,27 +65,36 @@ def initLogging(i_file_name:str="app.log",max_bytes: int = 1_000_000, backup_cou
     
     # pokud exituje LOG_DIR z configu tak použijeme tento adresář
     # pokud je None tak se použije adresář aplikace
-    import libs.config as cfg
+    logDir='log'
     
-    file_name=os.path.join(getMainScriptDir(),'logs',i_file_name) # defaultní cesta
+    try:
+        import libs.config as cfg
+        if hasattr(cfg,'LOG_DIR'):
+            logDir=str(cfg.LOG_DIR)
+    except ImportError:
+        try:
+            import libs.app.cfg as cfg
+            if cfg.LOG_DIR:
+                logDir=str(cfg.LOG_DIR)
+        except ImportError:
+            pass
+    
+    if not logDir.startswith('/'):
+        logDir=os.path.join(getMainScriptDir(),logDir)
+    
+    file_name=os.path.join(logDir,i_file_name) # defaultní cesta
     
     # pokud neexistuje logdir pokusíme se jeje vytvořit
-    if cfg.LOG_DIR and not os.path.exists(cfg.LOG_DIR):
+    if os.path.exists(logDir)==False:
         try:
-            os.makedirs(cfg.LOG_DIR, exist_ok=True)
+            os.makedirs(logDir, exist_ok=True)
             # nastavíme pro všechny
-            os.chmod(cfg.LOG_DIR, 0o755)
+            os.chmod(logDir, 0o755)
             print(f"Created log dir '{cfg.LOG_DIR}'.", file=sys.stderr)
         except Exception as e:
             print(f"Could not create log dir '{cfg.LOG_DIR}': {e}", file=sys.stderr)
-    
-    # pokud existuje a je writable tak použijeme tento adresář
-    if cfg.LOG_DIR and os.path.exists(cfg.LOG_DIR) and os.path.isdir(cfg.LOG_DIR):
-        if not os.access(cfg.LOG_DIR, os.W_OK):
-            print(f"Log dir '{cfg.LOG_DIR}' is not writable, using script dir instead.", file=sys.stderr)
-        else:
-            file_name=os.path.join(cfg.LOG_DIR,i_file_name)
-    
+            exit(1)
+        
     from logging.handlers import RotatingFileHandler
     
     # --- Handlery ---
