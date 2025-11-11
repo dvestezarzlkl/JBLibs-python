@@ -16,7 +16,7 @@ class git:
     **Path** je cesta k repozitáři na disku, tzn tam kde je přítomný adresář .git,
     **User** je uživatel systému pod kterým chceme spustit git příkazy (může být root nebo jiný systémový uživatel) 
     
-    soubor credential je potom hledán buď u:
+    soubor credential je potom hledán buď u: (pokud je nastaven, pokud je v konstruktoru None tak bude vynecháno hledání cred souborů)
     - root v `/opt/kiosk/creds/root/.g_c` tzn cesta je `{credDirRoot}/{credSubDir}/root/{credFilename}`
     - sys_user v `/opt/kiosk/creds/sys_user/.g_c` tzn cesta je `{credDirRoot}/{credSubDir}/{username}/{credFilename}`
     
@@ -29,25 +29,29 @@ class git:
     
     def __init__(        
             self,
-            credDirRoot:str="/opt/kiosk/",
+            credDirRoot:str|None="/opt/kiosk/",
             credSubDir:str="creds",
             credFilename:str=".g_c",
             overrideDirUser:str=None
         ):
         """Inicializace třídy git pro správu git repozitářů.
         Arguments:
-            credDirRoot (str): kořenový adresář kde jsou uložené git credentials
+            credDirRoot (str|None): kořenový adresář kde jsou uložené git credentials
+                        pokud je None, tak se nebudou hledat
             credSubDir (str): podadresář uvnitř root adresáře kde jsou uložené git credentials pro různé uživatele
             credFilename (str): název souboru s git credentials uvnitř uživatelského adresáře
         Raises:
             FileNotFoundError: pokud neexistuje adresář s credentials
         """
         
-        self.credDir:str=os.path.join(credDirRoot,credSubDir)
-        """Adresář kde jsou uložené git credentials pro různé uživatele systému."""
+        if credDirRoot is None:
+            self.credDir=None            
+        else:
+            self.credDir:str=os.path.join(credDirRoot,credSubDir)
+            """Adresář kde jsou uložené git credentials pro různé uživatele systému."""
         
-        if not os.path.exists(self.credDir) or not os.path.isdir(self.credDir):
-            raise FileNotFoundError(f"Creds dir '{self.credDir}' not found.")  
+            if not os.path.exists(self.credDir) or not os.path.isdir(self.credDir):
+                raise FileNotFoundError(f"Creds dir '{self.credDir}' not found.")  
         
         self.credFilename:str=credFilename
         """Název souboru s git credentials uvnitř uživatelského adresáře."""
@@ -94,20 +98,23 @@ class git:
             
             log.info(f"    -* CRED-USER: {credUser}")
 
-            home = os.path.join(self.credDir, credUser)
-            if not os.path.isdir(home):
-                raise FileNotFoundError(f"Credential directory '{home}' not found for user '{credUser}'.")
-            if self.dbg: log.info(f"    -* HOME        : '{home}'")
+            if not self.credDir is None:
+                home = os.path.join(self.credDir, credUser)
+                if not os.path.isdir(home):
+                    raise FileNotFoundError(f"Credential directory '{home}' not found for user '{credUser}'.")
+                if self.dbg: log.info(f"    -* HOME        : '{home}'")
 
-            cred_path = os.path.join(home, ".g_c")
-            if not os.path.exists(cred_path):
-                raise FileNotFoundError(f"Credential file '{cred_path}' not found for user '{user}'.")
-            if self.dbg: log.info(f"    -* CRED FILE   : '{cred_path}'")
+                cred_path = os.path.join(home, ".g_c")
+                if not os.path.exists(cred_path):
+                    raise FileNotFoundError(f"Credential file '{cred_path}' not found for user '{user}'.")
+                if self.dbg: log.info(f"    -* CRED FILE   : '{cred_path}'")
 
-
-            if os.path.exists(cred_path) and os.path.isfile(cred_path):
-                # Pozor: Git očekává jen jednu volbu po -c
-                cmd = cmd[:1] + ["-c", f"credential.helper=store --file={cred_path}"] + cmd[1:]
+                if os.path.exists(cred_path) and os.path.isfile(cred_path):
+                    # Pozor: Git očekává jen jednu volbu po -c
+                    cmd = cmd[:1] + ["-c", f"credential.helper=store --file={cred_path}"] + cmd[1:]
+            else:
+                log.info(f"    -* CRED file not used")
+                    
             if self.dbg: log.info(f"    -* CWD         : '{cwd}'")
 
             # Použij sudo jen pokud spouštíš pod jiným uživatelem
