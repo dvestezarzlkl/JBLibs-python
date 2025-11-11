@@ -640,7 +640,10 @@ def waitForSec(seconds:float, callableCheckToStopSec:callable=None, callableChec
     log = getMyLog()
 
     import time
-    import libs.run_vars as gVars
+    try:
+        import libs.run_vars as gVars
+    except ImportError:
+        gVars = None
     
     if(seconds<=0):
         return 9
@@ -649,7 +652,7 @@ def waitForSec(seconds:float, callableCheckToStopSec:callable=None, callableChec
     t0=time.time()
     dif=0
     sec=0
-    while not gVars.getSTOP() and dif<seconds:
+    while gVars and not gVars.getSTOP() and dif<seconds:
         time.sleep(.1)
         if int(dif)>sec:
             sec=int(dif)
@@ -661,7 +664,7 @@ def waitForSec(seconds:float, callableCheckToStopSec:callable=None, callableChec
             log.info(" - Wait interrupted by callableCheckLoop.")
             return 2
         dif=time.time()-t0
-    if gVars.getSTOP():
+    if gVars and gVars.getSTOP():
         log.info(" - Wait interrupted by signal.")
         return 1
     else:
