@@ -80,6 +80,9 @@ class git:
         machine, login, password = match.groups()        
         return f"https://{login}:{password}@{machine}"
 
+    def _spc(self, cnt:int=1):
+        return " " * (cnt * 3)
+
     def _run(self, cmd: list[str], cwd: str, user: Optional[str] = None) -> tuple[int, str, str]:
         """Spustí příkaz a vrátí (retcode, stdout, stderr).
         Arguments:
@@ -89,41 +92,43 @@ class git:
         Returns:
             tuple: (retcode, stdout, stderr)
         """
+        spc = self._spc
+        
         temp_cred_file = None
-        log.info(f"  > RUN CMD     : '{' '.join(cmd)}'")
+        log.info(spc(2) + f"> RUN CMD     : '{' '.join(cmd)}'")
         try:
             u = getpass.getuser()
             if user is None:
                 user = u
-            log.info(f"    -* USER        : '{user}' (aktuální: '{u}')")
+            log.info(spc(3) + f"-* USER        : '{user}' (aktuální: '{u}')")
 
             credUser = user if user == "root" else (self.overrideDirUser if self.overrideDirUser else user)
             
-            log.info(f"    -* CRED-USER: {credUser}")
+            log.info(spc(3) + f"-* CRED-USER: {credUser}")
 
             if not self.credDir is None:
                 home = os.path.join(self.credDir, credUser)
                 if not os.path.isdir(home):
                     raise FileNotFoundError(f"Credential directory '{home}' not found for user '{credUser}'.")
-                if self.dbg: log.info(f"    -* HOME        : '{home}'")
+                if self.dbg: log.info(spc(3) + f"-* HOME        : '{home}'")
 
                 cred_path = os.path.join(home, ".g_c")
                 if not os.path.exists(cred_path):
                     raise FileNotFoundError(f"Credential file '{cred_path}' not found for user '{user}'.")
-                if self.dbg: log.info(f"    -* CRED FILE   : '{cred_path}'")
+                if self.dbg: log.info(spc(3) + f"-* CRED FILE   : '{cred_path}'")
 
                 if os.path.exists(cred_path) and os.path.isfile(cred_path):
                     # Pozor: Git očekává jen jednu volbu po -c
                     cmd = cmd[:1] + ["-c", f"credential.helper=store --file={cred_path}"] + cmd[1:]
             else:
-                log.info(f"    -* CRED file not used")
+                log.info(spc(3) + f"-* CRED file not used")
                     
-            if self.dbg: log.info(f"    -* CWD         : '{cwd}'")
+            if self.dbg: log.info(spc(3) + f"-* CWD         : '{cwd}'")
 
             # Použij sudo jen pokud spouštíš pod jiným uživatelem
             if user != u:
                 cmd = ["sudo", "-u", user] + cmd
-            if self.dbg: log.info(f"    -*** CMD         : '{' '.join(cmd)}'")
+            if self.dbg: log.info(spc(3) + f"-*** CMD         : '{' '.join(cmd)}'")
 
             proc = subprocess.run(
                 cmd,
@@ -134,7 +139,7 @@ class git:
                 text=True,
                 timeout=60,
             )
-
+            log.info(spc(2) + "  - RUN EOF")
             return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
         except Exception as e:
@@ -243,7 +248,10 @@ class git:
             log.error(f"  ! fetch selhal: {ferr}")
             return False
 
+        # Zkontroluj submoduly
+        log.info(f"  -  -- {path}: kontrola submodulů ... --")
         subm=self._getSubmodules(path, user)
+        log.info(f"  - ****** {path}: submoduly: {subm[0]}  ******")
         if subm[1]:
             log.info(f"  - {path}: některé submoduly vyžadují update.")
             return True
