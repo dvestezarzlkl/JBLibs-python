@@ -154,24 +154,31 @@ class git:
                 except OSError:
                     pass
 
-    def _getSubmodules(self,path: str, user: Optional[str]) -> list[str]:
-        """Vrátí seznam názvů submodulů v repozitáři.
+    def _getSubmodules(self,path: str, user: Optional[str]) -> (list[(bool,str)],bool):
+        """Vrátí seznam názvů submodulů v repozitáři se stavem jestli vyžaduje update
         Arguments:
             path (str): cesta k git repozitáři
             user (str | None): uživatel systému pod kterým spustit příkaz
         Returns:
-            list[str]: seznam názvů submodulů, pokud nenalezeny žádné vrací prázdný seznam
+            list[(bool,str)]: seznam dvojic (requires_update, submodule_name)
+            bool: True pokud má nějaký submodul update, jinak False
+            
             
         """
         code, out, err = self._run(["git", "submodule"], path, user)
         submodules = []
+        rq_update=False
         if code == 0 and out:
             lines = out.splitlines()
             for line in lines:
                 parts = line.strip().split()
                 if len(parts) >= 2:
-                    submodules.append(parts[1])
-        return submodules
+                    submodule_name = parts[1]
+                    requires_update = parts[0].startswith('+')
+                    submodules.append((requires_update, submodule_name))
+                    if requires_update:
+                        rq_update=True
+        return submodules,rq_update
 
     def _get_upstream(self, path: str, user: Optional[str]) -> Optional[str]:
         """Vrátí plný název upstream refu (např. 'origin/main') nebo None, pokud není nastaven."""
@@ -235,6 +242,11 @@ class git:
         if fcode != 0:
             log.error(f"  ! fetch selhal: {ferr}")
             return False
+
+        subm=self._getSubmodules(path, user)
+        if subm[1]:
+            log.info(f"  - {path}: některé submoduly vyžadují update.")
+            return True
 
         # Porovnej HEAD s upstream
         code, out, err = self._run(["git", "rev-list", f"HEAD..{upstream}", "--count"], path, user)
