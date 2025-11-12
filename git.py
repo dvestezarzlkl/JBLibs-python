@@ -24,7 +24,10 @@ class git:
     Tzn pro root bude cesta stejná jako výše ale pro jakéhokoliv jinho uživatele bude:  
     `/opt/kiosk/creds/{overrideDirUser}/.g_c` tzn cesta je `{credDirRoot}/{credSubDir}/{overrideDirUser}/{credFilename}`
     
-    """    
+    """
+    
+    __VERSION__:str="2.0.0"
+    
     dbg:bool=False
     
     def __init__(        
