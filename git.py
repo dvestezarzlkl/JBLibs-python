@@ -151,6 +151,24 @@ class git:
                 except OSError:
                     pass
 
+    def _getSubmodules(self,path: str, user: Optional[str]) -> list[str]:
+        """Vrátí seznam názvů submodulů v repozitáři.
+        Arguments:
+            path (str): cesta k git repozitáři
+            user (str | None): uživatel systému pod kterým spustit příkaz
+        Returns:
+            list[str]: seznam názvů submodulů, pokud nenalezeny žádné vrací prázdný seznam
+            
+        """
+        code, out, err = self._run(["git", "submodule"], path, user)
+        submodules = []
+        if code == 0 and out:
+            lines = out.splitlines()
+            for line in lines:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    submodules.append(parts[1])
+        return submodules
 
     def _get_upstream(self, path: str, user: Optional[str]) -> Optional[str]:
         """Vrátí plný název upstream refu (např. 'origin/main') nebo None, pokud není nastaven."""
