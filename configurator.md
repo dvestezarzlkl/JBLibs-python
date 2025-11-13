@@ -8,6 +8,9 @@
   `~<filename>[ <přepínače>]`
   fullpathfilename ke scriptu který se sputí nakonec
 
+- `°<filename>[ <přepínače>]`  
+  fullpathfilename ke scriptu který se spustí na definovaném řádku tzn právě v tom daném kroku
+
 - změna sys usera pod kterým se pak budou dělat další operace
   `=u <name>`
   
@@ -48,8 +51,6 @@
     | `o-rwx` | odebere všem „others“ všechna práva | ostatní uživatelé = žádná práva           |
 
     `=acc <filename> <chmod>`
-
-
 
 
 ## ssh klíče
@@ -105,11 +106,49 @@ ssh_key_pc1 base64data
 jsLibs base64data
 myfiledata base64
 ```
-## komentáře
 
-kometační řádky začínajíznakem hashe, jinde komentáře povoleny nejsou
+## Stringy
+
+Je podporován string bez uvozovek i s nimi, uvnitř stringu jsou povoleny escape sekvence pro speciální znaky:
+- `\n` nový řádek
+- `\r` carriage return
+- `\"` uvozovka
+- `\\` zpětné lomítko
+
+Pokud je nalezeno zpětné lomítko mimo uvozovky tak ej považováno za chybu
+
+## Komentáře
+
+kometační řádky začínajíznakem hashem, pokud je has použit mimo uvozovky v řádku tak vše za ním se ignoruje
 
 ## prázdné řádky
 
 jsou povoleny
 
+## modifikace
+
+Podporuje ini a json soubory a to takto
+
+`=mod <filename> <ini|json>` tímto se zapne modifikování souboru, jakýkoliv jiný příkaz než následující
+modifikaci ukončí z bez důvodů, takže pokud by mezi následujícím příkazem a tímto byl jiný příkaz, tak se
+to považuje za syntax error
+
+- `+prop <prop_path> <value>` přidá pokud neexistuje hodnotu v ini nebo json souboru na zadanou hodnotu
+- `=prop <prop_path> <value>` přidá nebo změní hodnotu v ini nebo json souboru na zadanou hodnotu
+- `-prop <prop_path>` odstraní hodnotu v ini nebo json souboru
+
+## balíčkovací systém
+
+Podporuje balíčkovací systém pro instalaci balíčků na zařízení
+
+- `+<bal> <package_name>` - nainstaluje balíček
+- `=<bal> <package_name>` - upgraduje balíček, neinstaluje
+- `-<bal>` - odinstaluje balíček
+
+kde `bal` je:
+- `app` pro apt, dnf, yum
+- `npm` pro npm - tady je dobré napřed nastavit cestu aby se správně instalovalo do správného místa
+- `pip` pro pip - také je dobré napřed volat `=d <path>` aby se správně instalovalo do správného místa
+- `pip3` pro pip3 stejné jako pip
+
+a `package_name` odpovídá přímo zápisu daného balíčkovače
