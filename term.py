@@ -118,7 +118,7 @@ def getK(timeout: float = None) -> Union[str, None]:
     r = None
     start_time = time.time()
     while not r:
-        time.sleep(0.05)
+        time.sleep(0.01)
         if timeout and (time.time() - start_time) > timeout:
             r = False
             break
