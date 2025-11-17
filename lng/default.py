@@ -22,6 +22,7 @@ TXT_CMENU_ERR08 = "Menu width must be an integer, either 0 or in the range 20-10
 TXT_CMENU_ERR09 = "esc_is_quit must be a boolean"
 TXT_CMENU_ERR10 = "qitEnabled must be a boolean"
 TXT_CMENU_ERR11 = "{co} must be a string or instance of c_menu_block_items"
+TXT_SCR_LDNG = "Loading ..."
 
 TXT_INPUT_A     = "Input"
 TXT_INPUT_NEW_PWD = "New password"

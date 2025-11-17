@@ -1099,9 +1099,14 @@ class c_menu:
                 ch.append(i.choice)
         return err if len(err)>0 else None
         
-    def run_refresh(self,c:str) -> Union[bool,str]:
+    def run_refresh(self,c:str,first:bool=False) -> Union[bool,str]:
         """pokud vrátí string tak se menu ukončí s chybou a vrátí tento string jako chybu"""
-        from .input import setMinMessageWidth        
+        from .input import setMinMessageWidth
+        if first:
+            sys.stdout.write(
+                f"\033[H{TXT_SCR_LDNG}\033[J"
+            )
+        
         err=[]                 
         if self.menuRecycle:
             if self.onShowMenu:
@@ -1181,6 +1186,8 @@ class c_menu:
                 self._mData=self._runSelItem.data
         
         first = True
+        """První načtení menu a s tímspojené akce jako text loadnig nebo první zpoždění kvůli klávesnici"""
+        
         log.info(f" >>> RUN Menu '{self.__class__.__name__}' started ---")
         c=""
         
@@ -1203,13 +1210,13 @@ class c_menu:
                 return "Exception on onEnterMenu: "+str(e)
         
         while True: 
-            x=self.run_refresh(c)
+            x=self.run_refresh(c,first)
             self.menuRecycle=False
             if isinstance(x,str):                
                 return x
             
             if first:
-                sleep(0.1)
+                sleep(0.25) # opoždění při prvním načtení aby se stihla klávesnice stabilizovat a nezopakovala se např volba
             first = False
 
             xc=getKey(ESC_isExit=True)
@@ -1290,6 +1297,7 @@ class c_menu:
                     cls()
                     log.debug(f"Sub menu '{item.label}' started ---")
                     e=item.onSelect.run(item)
+                    first=True # po návratu je to vpodstatě také první načtení menu
                     # zpracuj návratovou hodnotu ze submenu
                     if isinstance(e,str):
                         self.lastReturn = onSelReturn(err=e)
@@ -1302,6 +1310,7 @@ class c_menu:
                         cls()
                     self.lastReturn = item.onSelect(item)
                     # zpracuj návratovou hodnotu z funkce onSelect
+                    first=True # po návratu je to vpodstatě také první načtení menu
                     if not isinstance(self.lastReturn, onSelReturn):
                         if isinstance(self.lastReturn, str):
                             ## pokud začíná 'OK' tak není chyba ale info
@@ -1333,7 +1342,7 @@ class c_menu:
                     return
             
             self._selectedItem = None
-            sleep(0.25)
+            sleep(0.1) # malá pauza než se znovu vykreslí menu
        
     def getLastSelItem(self) -> Union[None,c_menu_item]:
         """Vrátí poslední vybranou položku menu
