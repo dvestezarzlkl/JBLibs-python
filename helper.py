@@ -1,6 +1,6 @@
 # cspell:ignore levelname,HLPR,STPENA,STPDIS,geteuid
 from .lng.default import *
-import os, platform,sys,logging,subprocess,inspect,hashlib
+import os, platform,sys,logging,subprocess,inspect,hashlib,pwd
 from importlib import util
 from typing import Union,Callable,Union,Tuple
 import configparser,re,psutil
@@ -141,27 +141,57 @@ def sanitizeUserName(username: str) -> Union[str,None]:
         return None
     return username
 
-def userExists(userName:str,checkWhiteSpace=True)->Union[bool,None]:
+def userExists(userName: str, checkWhiteSpace: bool = True) -> Union[bool, None]:
     """
-    Check if user exists
+    Check if user exists.
     
     Parameters:
         userName (str): user name
         checkWhiteSpace (bool): check if there are any white spaces at the beginning or end of the user name
-        
+            True  - if there are white spaces, return None
+            False - do not check white spaces        
     Returns:
-        Union[bool,None]: True if user exists, False if not, None if error
+        True  - user exists
+        False - user does not exist
+        None  - invalid input (whitespace or not a string)
     """
     if not isinstance(userName, str):
         return None
-    u=userName.strip()
-    if checkWhiteSpace and u!=userName:
-        return None
-    if not userName:
-        return None
-    result = subprocess.run(['id', '-u', userName], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return result.returncode == 0
 
+    if userName == "":
+        return None
+
+    u = userName.strip()
+    if checkWhiteSpace and u != userName:
+        return None
+
+    if u=="" :
+        return None
+
+    try:
+        pwd.getpwnam(u)
+        return True
+    except KeyError:
+        return False
+    
+def getUserHome(username:str,checkWhiteSpace: bool = True)->Union[str|None]:
+    """Získá domovský adresář uživatele.
+    Args:
+        username (str): uživatelské jméno, nesmí obsahovat bílé znaky na začátku a konci
+        checkWhiteSpace (bool): zkontrolovat bílé znaky na začátku a konci jména
+            True - pokud jsou bílé znaky, vrátí None
+            False - neřeší bílé znaky
+    Returns:
+        str|None: cesta k domovskému adresáři nebo None pokud uživatel neexistuje
+    """
+    if not userExists(username,checkWhiteSpace):
+        return None
+    try:
+        pw = pwd.getpwnam(username)
+    except KeyError:
+        return None
+    return pw.pw_dir    
+    
 def getLogger(name:str)->logging.Logger:
     """
     Vráti instanci loggeru, pokud ještě nebyl inicializován, inicializuje se viz initLogging()
@@ -545,20 +575,6 @@ def getListeningPorts(processName:str="node node-red")->List[c_prcLstn]:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
     return ret
-
-def getUserHome(username: str) -> Union[str,None]:
-    """ vrátí cestu k domovskému adresáři uživatele
-    
-    Parameters:
-        username (str): jméno uživatele
-    
-    Returns:
-        Union[str,None]: cesta k domovskému adresáři uživatele nebo None při chybě bez lomítek na konci
-    """
-    user=sanitizeUserName(username)
-    if user:
-        return f'/home/{user}'
-    return None
 
 def getUserList(filter:Callable[[str],bool]=None,asTuple=False)->Union[ List[str] , List[Tuple[int,str]] ]:
     """

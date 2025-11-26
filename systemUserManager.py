@@ -2,7 +2,7 @@ from .lng.default import *
 from .helper import loadLng
 loadLng()
 
-import os
+import os, pwd
 import subprocess
 from libs.JBLibs.input import get_username, get_pwd_confirm, confirm, anyKey, get_input
 from libs.JBLibs.helper import userExists,getLogger,getUserList
@@ -12,6 +12,20 @@ from typing import Union,List
 log = getLogger(__name__)     
 
 class sshMng:
+    @staticmethod
+    def getUserHome(username:str)->str|None:
+        """Získá domovský adresář uživatele.
+        Args:
+            username (str): uživatelské jméno
+        Returns:
+            str|None: cesta k domovskému adresáři nebo None pokud uživatel neexistuje
+        """
+        try:
+            pw = pwd.getpwnam(username)
+        except KeyError:
+            return None
+        return pw.pw_dir
+    
     @staticmethod
     def getFilePath_auth(username, check:bool=False) -> Union[str, None]:
         """
@@ -25,7 +39,7 @@ class sshMng:
             str: cesta k souboru authorized_keys
             None: pokud soubor neexistuje
         """
-        x= f"/home/{username}/.ssh/authorized_keys"
+        x = os.path.join(sshMng.getUserHome(username), ".ssh", "authorized_keys")
         return x if not check or os.path.isfile(x) else None
     
     @staticmethod
@@ -41,7 +55,7 @@ class sshMng:
             str: cesta k adresáři .ssh
             None: pokud adresář neexistuje
         """
-        x= f"/home/{username}/.ssh"
+        x= os.path.join(sshMng.getUserHome(username), ".ssh")
         return x if not check or os.path.isdir(x) else None
     
     @staticmethod
@@ -201,7 +215,7 @@ class sshMng:
     
     @staticmethod
     def deleCert(userName:str, certName:str)->Union[str, None]:
-        """Smazání certifikátu
+        """Smazání certifikátu z sshManager adresáře uživatele
         
         Parameters:
             userName (str): jméno uživatele
