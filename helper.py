@@ -68,12 +68,12 @@ def initLogging(i_file_name:str="app.log",max_bytes: int = 1_000_000, backup_cou
     logDir='log'
     
     try:
-        import libs.config as cfg
+        import libs.config as cfg # type: ignore
         if hasattr(cfg,'LOG_DIR'):
             logDir=str(cfg.LOG_DIR)
     except ImportError:
         try:
-            import libs.app.cfg as cfg
+            import libs.app.cfg as cfg # type: ignore
             if cfg.LOG_DIR:
                 logDir=str(cfg.LOG_DIR)
         except ImportError:
@@ -92,7 +92,7 @@ def initLogging(i_file_name:str="app.log",max_bytes: int = 1_000_000, backup_cou
             os.chmod(logDir, 0o755)
             print(f"Created log dir '{cfg.LOG_DIR}'.", file=sys.stderr)
         except Exception as e:
-            print(f"Could not create log dir '{cfg.LOG_DIR}': {e}", file=sys.stderr)
+            print(f"Could not create log dir '{logDir}': {e}", file=sys.stderr)
             exit(1)
         
     from logging.handlers import RotatingFileHandler
@@ -657,7 +657,7 @@ def waitForSec(seconds:float, callableCheckToStopSec:callable=None, callableChec
 
     import time
     try:
-        import libs.run_vars as gVars
+        import libs.run_vars as gVars # type: ignore
     except ImportError:
         gVars = None
     

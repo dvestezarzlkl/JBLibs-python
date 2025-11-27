@@ -1,41 +1,246 @@
-# lib/sftp/mounts.py
+from ..helper import getLogger
+log = getLogger("sftpMountsMng")
+
 import os
-import pwd
 import grp
 import subprocess
-from .errors import SftpConfigError
+from libs.JBLibs.sftp.mountPoint import sftpUserMountpoint
+import libs.JBLibs.sftp.ssh as ssh
+from libs.JBLibs.sftp.glob import SAFE_NAME_RGX
+from libs.JBLibs.helper import getLogger,userExists,getUserHome
+from .userGrps import getUserGroups, addUSerToGroup
 
-FSTAB_DIR = "/etc/fstab.d"   # per-user fstab soubory
+FSTAB_DIR:str = "/etc/fstab.d"   # per-user fstab soubory
+MOUTPOINT_FILENAME:str = ".sftp_mounts_mng"  # název souboru s mountpointy v home adresáři uživatele
 
-def get_owner_group(path):
-    st = os.stat(path)
-    return pwd.getpwuid(st.st_uid).pw_name, grp.getgrgid(st.st_gid).gr_name
+class mountpointsManager:
+    def __init__(self, username:str):
+        self.log = getLogger("sftpMountsMng")
+        self.username = username
+        self.ok:bool = False
+        
+        if not userExists(self.username):
+            self.log.error(f"User {self.username} does not exist.")
+            return        
+        
+        self.homeDir:str|None = getUserHome(self.username)
+        """Cesta k home adresáři uživatele"""
+        
+        if not self.homeDir:
+            self.log.error(f"Cannot determine home directory for user {self.username}.")
+            return
+        
+        self.mountpointFile:str = os.path.join(self.homeDir, MOUTPOINT_FILENAME) if self.homeDir else ""
+        """Cesta k mountpointům uživatele do jailu"""
+        
+        self.mountpoints:list[sftpUserMountpoint] = []
+        """Seznam mountpointů uživatele"""        
 
 
-def ensure_user_in_group(username, group):
-    subprocess.run(["usermod", "-aG", group, username], check=True)
+        # načteme mountpointy
+        jailDir= ssh.ensureJail(self.username)
+        try:
+            if os.path.isfile(self.mountpointFile):
+                with open(self.mountpointFile, "r") as f:
+                    for line in f:
+                        line=line.strip()
+                        if line!="":
+                            mp=sftpUserMountpoint(jailPath=jailDir, line=line, val=None)
+                            self.mountpoints.append(mp)
+        except Exception as e:
+            self.moundpoinstOK=False
+            self.error=f"Failed to load mountpoints: {e}. "
+            return
 
+        self.ok=True 
+    
+    def deleteOneMountpoint(self, mount_point:sftpUserMountpoint)->None:
+        """Odstraní mountpoint s daným jménem z uživatelova jailu.
+        Args:
+            mount_point (sftpUserMountpoint): mountpoint k odstranění
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při mazání mountpointu
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        if not isinstance(mount_point, sftpUserMountpoint):
+            raise RuntimeError(f"Invalid mountpoint provided for deletion.")
 
-def prepare_mount_dir(username: str, group: str, dst: str):
-    """
-    Připraví cílový adresář pro bind mount uvnitř jailu.
+        # zkontrolujeme existenci mountpointu
+        mp_to_delete = None
+        for mp in self.mountpoints:
+            if mp.mountName == mount_point.mountName and mp.realPath == mount_point.realPath:
+                mp_to_delete = mp
+                break
+        if mp_to_delete is None:
+            raise RuntimeError(f"Mountpoint {mount_point.mountName} does not exist for user {self.username}.")
+        
+        try:
+            if mount_point.isMounted():
+                # zkontrolujeme, zda je možné bezpečně odmountovat
+                if not can_umount(mount_point.mountPath):
+                    raise RuntimeError(f"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.")
+                subprocess.run(["umount", mp_to_delete.mountPath], check=True)
+            if mp_to_delete.mountExists():
+                os.rmdir(mp_to_delete.mountPath)
+                
+            self.mountpoints.remove(mp_to_delete)
+            self.__saveMountpoints() # jen pokud nic neselže jinak znovu proběhnou kroky výše
+        except Exception as e:
+            raise RuntimeError(f"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}")
+ 
+    def umount_will_be_ok(self) -> bool:
+        """Zkontroluje, zda je možné bezpečně odmountovat všechny mountpointy uživatele.
+        Returns:
+            bool: True pokud je možné bezpečně odmountovat všechny mountpointy, jinak False
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        for mp in self.mountpoints:
+            if os.path.ismount(mp.mountPath):
+                if not can_umount(mp.mountPath):
+                    return False
+        return True
+    
+    def getMountpointByName(self, mount_name:str)->sftpUserMountpoint|None:
+        """Získá mountpoint podle jména.
+        Args:
+            mount_name (str): jméno mountpointu v jailu
+        Returns:
+            sftpUserMountpoint|None: instance mountpointu pokud existuje, jinak None
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        for mp in self.mountpoints:
+            if mp.mountName == mount_name:
+                return mp
+        return None
+    
+    def ensure_mountpoint(self, mount_name:str, real_path:str)->sftpUserMountpoint:
+        """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
+        Args:
+            mount_name (str): jméno mountpointu v jailu
+            real_path (str): reálná cesta k umístění
+        Returns:
+            sftpUserMountpoint: instance sftpUserMountpoint pro vytvořený mountpoint
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
 
-    - vytvoří adresář, pokud neexistuje
-    - VŽDY přenastaví vlastníka na user:group
-    - nastaví chmod 755
-    """
-    os.makedirs(dst, exist_ok=True)
+        # otestujeme jestli už mountpoint neexistuje
+        for mp in self.mountpoints:
+            if mp.mountName == mount_name:
+                if mp.realPath != real_path:
+                    raise RuntimeError(f"Mountpoint {mount_name} already exists with different real path {mp.realPath}.")
+                if mp.isMounted():
+                    return mp
+                else:
+                    # mountpoint existuje ale není namountován, smažeme ho a vytvoříme znovu
+                    self.deleteOneMountpoint(mp)
+                    self.__saveMountpoints()
+                    break  # pokračujeme v tvorbě nového mountpointu
+        
+        jail_dir = ssh.ensureJail(self.username)
+        mp = sftpUserMountpoint(jailPath=jail_dir, line=mount_name, val=real_path)
+        mp.ensureMountpoint(self.username)
+        
+        # pokusíme se vytvořit bind mount
+        try:
+            subprocess.run([
+                "mount",
+                "--bind",
+                real_path,
+                mp.mountPath
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to bind mount {real_path} to {mount_name}: {e}")
+        
+        self.mountpoints.append(mp)
+        self.__saveMountpoints()
+        
+        return mp
+    
+    def __saveMountpoints(self):
+        """Uloží aktuální mountpointy uživatele do manifestu.
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při ukládání
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        try:
+            with open(self.mountpointFile, "w") as f:
+                for mp in self.getMountpoints():
+                    f.write(mp.getLine() + "\n")
+        except Exception as e:
+            raise RuntimeError(f"Failed to save mountpoints for user {self.username}: {e}")    
+        
+    def deleteMountpoint(self, mount_name:str|None)->None:
+        """Odstraní mountpoint s daným jménem z uživatelova jailu.
+        Args:
+            mount_name (str|None): jméno mountpointu v jailu, pokud zadáme None, smaže všechny mountpointy
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při mazání mountpointu
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        if mount_name is None:
+            for mp in self.mountpoints[:]:  # kopie seznamu pro bezpečné mazání během iterace
+                self.deleteOneMountpoint(mp)
+        else:
+            mp=self.getMountpointByName(mount_name)
+            if mp is None:
+                raise RuntimeError(f"Mountpoint {mount_name} does not exist for user {self.username}.")
+            self.deleteOneMountpoint(mp)        
+        
+    def getMountpoints(self)->list[sftpUserMountpoint]:
+        """Získá seznam mountpointů uživatele.
+        Returns:
+            list[sftpUserMountpoint]: seznam mountpointů uživatele
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        return list(self.mountpoints)
+    
+    def ensureMountPointUserGroups(self)->list[str]:
+        """Zajistí, že uživatel má přístup k mountpointům pro zadané skupiny.
+        Returns:
+            list[str]: seznam jmen skupin, které mají přístup k mountpointům
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při nastavování přístupů
+        """
+        if not self.ok or not self.homeDir:
+            raise RuntimeError(f"User {self.username} is not properly initialized.")
+        
+        curGroups: list[str] = getUserGroups(self.username)
+        group_names: list[str] = []
+        for mp in self.getMountpoints():
+            # zjistíme skupinu na fizické cestě adresáře přes os
+            try:
+                stat_info = os.stat(mp.realPath)
+                gid = stat_info.st_gid
+                group_info = grp.getgrgid(gid)
+                group_name = group_info.gr_name
+                group_names.append(group_name)
+                if group_name not in curGroups:
+                    addUSerToGroup(group_name)
+            except Exception as e:
+                raise RuntimeError(f"Failed to ensure mountpoint user groups for user {self.username}: {e}")
 
-    pw = pwd.getpwnam(username)
-    gr = grp.getgrnam(group)
-
-    os.chown(dst, pw.pw_uid, gr.gr_gid)
-    os.chmod(dst, 0o755)
-
-
-def bind_mount(src, dst):
-    subprocess.run(["mount", "--bind", src, dst], check=True)
-
+    
 
 def write_fstab(username, mounts: dict):
     """
@@ -58,24 +263,20 @@ def remove_fstab(username):
     if os.path.exists(fstab_file):        
         os.remove(fstab_file)
 
+def can_umount(path: str) -> bool:
+    if not os.path.ismount(path):
+        return True
+    proc = subprocess.run(
+        ["lsof", "+f", "--", path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    return (proc.stdout.strip() == b"") and (proc.returncode in (0,1))
 
-def unmount_all(mounts: dict)->bool:
-    """
-    mounts: { name: {src: ..., dst: ...}, ... }
-    Umount podle dst.
-    """
-    dst_list = [m["dst"] for m in mounts.values()]
-    dst_list.sort(key=len, reverse=True)
-
-    for dst in dst_list:
-        if os.path.exists(dst):
-            try:
-                if os.path.ismount(dst):
-                    subprocess.run(["umount", dst], check=False)
-                # remove mount point directory
-                if os.path.isdir(dst):
-                    os.rmdir(dst)
-            except Exception as e:
-                print(f"Warning: failed to unmount {dst}: {e}")
-                return False
-    return True
+# test lsof existence, pokud není tak system exit 1 s chybovou hláškou jak instalovat, nevymýšlej neexistující funkce
+try:
+    subprocess.run(["lsof", "-v"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+except FileNotFoundError:
+    print("Error: 'lsof' command not found. Please install 'sudo apt install lsof' package to use mountpoint management features.")
+    import sys
+    sys.exit(1)
