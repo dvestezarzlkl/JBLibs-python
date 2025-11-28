@@ -7,7 +7,6 @@ from .mountPoint import sftpUserMountpoint
 import threading
 
 SMB_CFG_DIR:str = "/etc/samba"
-SMG_MY_CFG_SUBDIR:str = "smb_sftp_conf.d"
 
 SMB_SFT_USER:str = "sftp_samba_user"
 """Uživatelské jméno pro přístup k Samba SFTP mount pointům."""
@@ -51,70 +50,6 @@ class smbHelp:
         """
         from shutil import which
         return which("smbd") is not None
-
-    @staticmethod
-    def ensureSambaCfgLoader():
-        """Zajistí, že je v cfg je include pro načítání uživatelských conf
-        souborů pro SFTP uživatele.
-        
-        Zajistí i existenci adresáře pro uživatelské conf soubory.
-        Raises:
-            RuntimeError: pokud dojde k chybě při úpravě konfiguračního souboru Samba
-        """
-        smb_conf_dir=os.path.join(SMB_CFG_DIR, SMG_MY_CFG_SUBDIR)
-        
-        if not os.path.isdir(smb_conf_dir):
-            try:
-                log.info(f"Creating Samba config directory {smb_conf_dir}.")
-                os.makedirs(smb_conf_dir, exist_ok=True)
-            except Exception as e:
-                msg=f"Failed to create Samba config directory {smb_conf_dir}: {e}"
-                log.error(msg)
-                log.exception(e)
-                raise RuntimeError(msg)
-        try:
-            # owner root
-            os.chown(smb_conf_dir, 0, 0)
-            # perms 755
-            os.chmod(smb_conf_dir, 0o755)
-        except Exception as e:
-            msg=f"Failed to set ownership/permissions for Samba config directory {smb_conf_dir}: {e}"
-            log.error(msg)
-            log.exception(e)
-            raise RuntimeError(msg)
-        
-        smb_main_cfg=os.path.join(SMB_CFG_DIR, "smb.conf")
-        include_line=f'include = {os.path.join(smb_conf_dir, "*.conf")}\n'
-        try:
-            if os.path.isfile(smb_main_cfg):
-                with open(smb_main_cfg, "r") as f:
-                    lines=f.readlines()
-                for line in lines:
-                    if line.strip() == include_line.strip():
-                        return  # už tam je
-                # přidat na konec sekce [global]
-                log.info(f"Adding Samba config loader include line to {smb_main_cfg}.")
-                includeLineW=f"\n{include_line}\n"
-                with open(smb_main_cfg, "w") as f:
-                    in_global=False
-                    for line in lines:
-                        f.write(line)
-                        if line.strip().lower() == "[global]":
-                            in_global=True
-                        elif in_global and line.startswith("[") and line.endswith("]\n"):
-                            # konec global sekce
-                            log.info(f"Writing Samba config loader include line before section {line.strip()} in {smb_main_cfg}.")
-                            f.write(includeLineW)
-                            in_global=False
-                    if in_global:
-                        # pokud jsme stále v global sekci, přidat na konec souboru
-                        log.info(f"Writing Samba config loader include line at end of {smb_main_cfg}.")
-                        f.write(includeLineW)
-        except Exception as e:
-            msg=f"Failed to ensure Samba config loader in {smb_main_cfg}: {e}"
-            log.error(msg)
-            log.exception(e)
-            raise RuntimeError(msg)
         
     @staticmethod        
     def ensureSambaUserPwd()->None:
@@ -164,6 +99,57 @@ class smbHelp:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to create Samba SFTP user {SMB_SFT_USER}: {e}")
 
+    def write_or_replace_samba_section(section: str, content: str):
+        """
+        Přidá nebo přepíše celou share sekci v smb.conf.
+        Args:
+            section: název sekce bez []
+            content: kompletní obsah sekce (může být více řádků)
+        """
+
+        section_header = f"[{section}]"
+        new_section_block = section_header + "\n" + content.rstrip() + "\n"
+
+        conf_file = os.path.join(SMB_CFG_DIR, "smb.conf")
+        if not os.path.isfile(conf_file):
+            raise RuntimeError(f"Samba configuration file does not exist: {conf_file}")
+        
+        with open(conf_file, "r") as f:
+            lines = f.readlines()
+
+        out = []
+        inside = False
+        replaced = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped.lower().startswith("[") and stripped.endswith("]"):
+                current_section = stripped[1:-1]
+
+                if inside:
+                    # ukončení staré sekce – vložíme novou
+                    out.append(new_section_block)
+                    inside = False
+                    replaced = True
+
+                if current_section.lower() == section.lower():
+                    inside = True
+                    continue  # přeskočit starou sekci
+
+            if not inside:
+                out.append(line)
+
+        # pokud sekce nebyla nalezena – přidáme na konec
+        if not replaced:
+            if not out[-1].endswith("\n"):
+                out.append("\n")
+            out.append(new_section_block)
+
+        with open(conf_file, "w") as f:
+            f.writelines(out)
+
+
     @staticmethod    
     def ensureSambaSharePoint(target:str, share_base_name:str, forceUser:str, forceGrp:str)->None:
         """Přidá nový mount point do Samba konfigurace.
@@ -199,17 +185,14 @@ class smbHelp:
         if st.st_gid != gr.gr_gid:
             raise RuntimeError(f"Samba mount target path {target} is not owned by group {forceGrp}.")
             
-        smb_conf_dir=os.path.join(SMB_CFG_DIR, SMG_MY_CFG_SUBDIR)
         share_name=makeShareNameSafe(share_base_name,forceUser, True)
-        
-        share_cfg_file=os.path.join(smb_conf_dir, f"{share_name}.conf")
-        log.info(f"Adding Samba mount point config {share_cfg_file}.")
+                
+        log.info(f"Adding Samba mount point config to section [{share_name}]:")
         log.info(f" - target: {target}")
-        log.info(f" - dest: {share_name}")
         log.info(f" - force user: {forceUser}")
         log.info(f" - force group: {forceGrp}")
         
-        share_cfg=f"""[{share_name}]
+        share_cfg=f"""
     path = {target}
     valid users = {SMB_SFT_USER}
     force user = {forceUser}
@@ -220,16 +203,21 @@ class smbHelp:
     create mask = 0700
     directory mask = 0700
     """
-        try:
-            with open(share_cfg_file, "w") as f:
-                f.write(share_cfg)
-            # owner root
-            os.chown(share_cfg_file, 0, 0)
-            # perms 600
-            os.chmod(share_cfg_file, 0o600)
-        except Exception as e:
-            raise RuntimeError(f"Failed to add Samba mount point config {share_cfg_file}: {e}")   
-    
+        smbHelp.write_or_replace_samba_section(share_name, share_cfg)
+        
+    @staticmethod
+    def removeSambaSharePoint(share_base_name:str, forUser:str)->None:
+        """Odebere mount point ze Samba konfigurace.
+        Args:
+            share_base_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
+            forUser (str): uživatel, pro kterého je share určen
+        Raises:
+            RuntimeError: pokud dojde k chybě při odebírání mount pointu
+        """        
+        share_name=makeShareNameSafe(share_base_name,forUser, True)     
+        log.info(f"Removing Samba mount point config for section [{share_name}].")
+        smbHelp.write_or_replace_samba_section(share_name, "")  # přepíšeme prázdným obsahem – smaže se
+        
     @staticmethod
     def getFstabFileName(base_share_name:str, forUser:str)->str:
         """Získá jméno fstab souboru pro zadaný mount point.
@@ -427,7 +415,6 @@ def initEnsureSamba():
     
     smbHelp.ensureSambaUserExists()
     smbHelp.ensureSambaCredFile()
-    smbHelp.ensureSambaCfgLoader()
     
 def restartSambaService()->bool:
     """Restartuje samba službu
@@ -513,23 +500,17 @@ def removeSharePoint(mp:sftpUserMountpoint)->None:
     
     # odstranění konfigu ze samba
     log.info(f" - Removing Samba SFTP mount point configuration for share {share_base_name}.")
-    smb_conf_dir=os.path.join(SMB_CFG_DIR, SMG_MY_CFG_SUBDIR)
-    share_name=makeShareNameSafe(share_base_name,forUser, True)
-    share_cfg_file=os.path.join(smb_conf_dir, f"{share_name}.conf")
-    if not os.path.isfile(share_cfg_file):
-        log.info(f" - Samba mount point config {share_cfg_file} does not exist. Nothing to remove.")
-    else:
-        log.info(f" - Removing Samba mount point config {share_cfg_file}.")
+    smbHelp.removeSambaSharePoint(share_base_name, forUser)
+        
+    # odstranění mountpointu
+    if os.path.isdir(mp.mountPath):
+        log.info(f" - Removing Samba SFTP mount point directory {mp.mountPath}.")
         try:
-            os.remove(share_cfg_file)
+            os.rmdir(mp.mountPath)
         except Exception as e:
-            msg=f"Failed to remove Samba mount point config {share_cfg_file}: {e}"
+            msg=f"Failed to remove Samba SFTP mount point directory {mp.mountPath}: {e}"
             log.error(msg)
             log.exception(e)
-            raise RuntimeError(msg)    
-        if not restartSambaService():
-            msg=f"Failed to restart Samba service after removing mount point config {share_cfg_file}."
-            log.error(msg)
             raise RuntimeError(msg)
         
         
@@ -550,19 +531,33 @@ def ensureMountpoint(mp:sftpUserMountpoint)->str:
     try:
         if not isinstance(mp, sftpUserMountpoint):
             raise RuntimeError("Invalid mount point instance provided.")
-        if mp.isMountpointPathsOK() is False:
-            raise RuntimeError("Mount point paths are not OK.")
         
         base_share_name=mp.mountName
         source=mp.realPath
-        target=mp.mountPath
+        target=mp.mountPath        
         log.info(f"Ensuring Samba SFTP mount point configuration for share {base_share_name}.")
-        initEnsureSamba()
-        
+        initEnsureSamba()        
         # získáme informace username a groupname z realpath
         forceUser, uid = mp.forUser()
-        forceGrp, gid = mp.forGroup()
+        forceGrp, gid = mp.forGroup()        
         
+        if mp.pathExists() is False:
+            raise RuntimeError(f"Mount point path does not exist: {mp.mountPath}")
+        if not mp.mountExists():
+            log.info(f"Creating mount point directory: {mp.mountPath}")
+            try:
+                os.makedirs(mp.mountPath, exist_ok=True)
+                os.chown(mp.mountPath, uid, gid)
+                os.chmod(mp.mountPath, 0o700)
+            except Exception as e:
+                msg=f"Failed to create mount point directory {mp.mountPath}: {e}"
+                log.error(msg)
+                log.exception(e)
+                raise RuntimeError(msg)
+        
+        if mp.isMountpointPathsOK() is False:
+            raise RuntimeError("Mount point paths are not OK.")
+                
         log.info(f" - Ensuring Samba SFTP mount point for share {base_share_name} at target {source}.")
         # vytvoří sourcePath  > //localhost/sftp_mount_user_sharename
         smbHelp.ensureSambaSharePoint(source, base_share_name, forceUser, forceGrp)
@@ -602,11 +597,11 @@ def ensureMountpoint(mp:sftpUserMountpoint)->str:
         msg=f"Failed to ensure Samba SFTP mount point: {e}"
         log.error(msg)
         log.exception(e)
-        log.info(f" - Cleaning up Samba SFTP mount point for share {base_share_name} due to error.")
+        log.info(f" - Cleaning up Samba SFTP")
         try:
             removeSharePoint(mp)
         except Exception as e2:
-            log.error(f"   - Failed to clean up Samba SFTP mount point for share {base_share_name}: {e2}")
+            log.error(f"   - Failed to clean up Samba SFTP")
             log.exception(e2)
         raise RuntimeError(msg)
     
