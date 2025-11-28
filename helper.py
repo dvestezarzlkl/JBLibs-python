@@ -51,7 +51,13 @@ def getMainScriptDir()->str:
         # Pokud je aplikace spuštěna jako běžný Python skript
         return os.path.dirname(os.path.abspath(sys.argv[0]))
 
-def initLogging(i_file_name:str="app.log",max_bytes: int = 1_000_000, backup_count: int = 3, toConsole: bool = False)->None:
+def initLogging(
+    i_file_name:str="app.log",
+    max_bytes: int = 1_000_000,
+    backup_count: int = 3,
+    toConsole: bool = False,
+    log_level: int = logging.DEBUG
+)->None:
     """
     Inicializuje logging pro skript se jménem souboru v parametru
     
@@ -116,12 +122,12 @@ def initLogging(i_file_name:str="app.log",max_bytes: int = 1_000_000, backup_cou
 
     # --- Logging config ---
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=log_level,
         handlers=handlers
     )
     
     log=logging.getLogger('LOG-INIT')
-    log.info(f"Logging initialized to file '{file_name}', max size: {max_bytes}, backup count: {backup_count}.")
+    log.debug(f"Logging initialized to file '{file_name}', max size: {max_bytes}, backup count: {backup_count}.")
     
     __LoggerInit=True
 
