@@ -1,7 +1,8 @@
 from ..helper import getLogger
 log= getLogger("sftp.User")
 
-import os,re,time,json,base64
+import os,time
+from ..input import confirm
 import pwd
 import subprocess
 from ...JBLibs import helper as hlp
@@ -240,18 +241,18 @@ class sftpUserMng:
             
             # teď by měly být mountpointy pryč a adresář prázdný, pokud ne tak tam někdo něco vytvořil mimo pointy a 
             # mohou to být důležité data, takže dotaz
-            if os.listdir(self.homeDir):
-                log.warning(f"Home directory {self.homeDir} of user {self.username} is not empty after removing mountpoints.")
-                from ..input import confirm
-                if not confirm(f"Home directory {self.homeDir} is not empty after removing mountpoints. Do you want to continue deleting the user and its home directory?\nThis will remove all data in the home directory. (y/n): "):
-                    msg=f"User deletion for {self.username} was cancelled by user due to non-empty home directory."
+            jailPath = ssh.ensureJail(self.username, testOnly=True)
+            if jailPath and os.path.exists(jailPath) and os.listdir(jailPath):
+                log.warning(f"Jail directory {jailPath} of user {self.username} is not empty after removing mountpoints.")
+                if not confirm(f"Home directory {jailPath} is not empty after removing mountpoints. Do you want to continue deleting the user and its home directory?\nThis will remove all data in the home directory. (y/n): "):
+                    msg=f"User deletion for {jailPath} was cancelled by user due to non-empty home directory."
                     log.warning(msg)
                     raise RuntimeError(msg)
             
             # odstraníme certifikáty
             log.info(f"Deleting all certificates for user {self.username}.")
             deepCpy = self.certificateManager.certificates.copy()
-            log.debug(f"Certificates to delete for user {self.username}: {deepCpy}")
+            log.debug(f"Certificates to delete for user {self.username}")
             for cert in deepCpy:
                 self.certificateManager.deleteSSHKey(cert)
             

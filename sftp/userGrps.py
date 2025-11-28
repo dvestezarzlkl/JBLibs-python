@@ -65,7 +65,7 @@ def addUSerToGroup(username:str, group_name:str)->bool:
     if not homeDir:
         raise RuntimeError(f"User {username} does not exist or has no home directory.")
     
-    if checkUserInGroup(group_name):
+    if checkUserInGroup(username, group_name):
         return True  # už tam je
 
     try:

@@ -221,10 +221,11 @@ def ensure_ssh_key(username:str,public_key:str)->str|None:
 
     return ak_file
 
-def ensureJail(username:str)->str|None:
+def ensureJail(username:str,testOnly:bool=False)->str|None:
     """Zajistí, že uživatel má vytvořený jail adresář a konfig
     Args:
         username (str): uživatelské jméno
+        testOnly (bool): pokud je True, pouze otestuje existenci jail adresáře a neprovádí žádné změny
     Returns:
         str: cesta k jail adresáři
         None: pokud při chybě
@@ -238,6 +239,9 @@ def ensureJail(username:str)->str|None:
     jail_dir = os.path.join(homeDir, "__sftp__")
     try:
         if not os.path.exists(jail_dir):
+            if testOnly:
+                log.info(f" - Jail directory {jail_dir} does not exist for user {username}, but testOnly is True. Not creating it.")
+                return None
             log.info(f" - Jail directory {jail_dir} does not exist for user {username}. Creating it.")
             os.makedirs(jail_dir, exist_ok=True)
         else:
@@ -247,8 +251,9 @@ def ensureJail(username:str)->str|None:
         log.exception(e)
         return None
     try:
-        pw = pwd.getpwnam(username)
-        os.chown(jail_dir, pw.pw_uid, pw.pw_gid)
+        # pw = pwd.getpwnam(username)
+        # os.chown(jail_dir, pw.pw_uid, pw.pw_gid)
+        os.chown(jail_dir, 0, 0)
         os.chmod(jail_dir, 0o755)
     except KeyError:
         raise RuntimeError(f"Cannot set ownership for jail directory, user {username} does not exist.")

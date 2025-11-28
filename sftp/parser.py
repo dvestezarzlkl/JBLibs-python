@@ -3,7 +3,7 @@ log = getLogger("sftp.parser")
 
 import os
 import re
-import json
+import json5
 import base64
 import pwd
 from typing import Union
@@ -38,6 +38,8 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
         - každá hodnota je reálná cesta k umístění
     - `sftpcerts` (optional array) je string[] pole certifikátů
         POZOR hodnota může začínat "b64:..." což znamená že je certifikát base64 zakódován
+    - `sambaVault` (optional bool) zda vytvořit mountpointy přes sambu (CIFS) nebo přímo bindem
+        výchozí je False (bind mount)
     
     POZOR pokud je root parametr `users` tak se jedná o pole uživatelů
         kde se uživatel stane rootem výše uvedených property
@@ -56,7 +58,7 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
     log.info(f"Reading JSON file {file}.")
     try:
         with open(file, "r") as f:
-            d=json.load(f)
+            d=json5.load(f)
     except Exception as e:
         log.error(f"Failed to load JSON file {file}: {e}")
         log.exception(e)
@@ -83,6 +85,14 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
             
             username=str(data["sftpuser"])
             safeName(username,throw=True)
+            
+            sambaVault=False
+            if "sambaVault" in data:
+                if isinstance(data["sambaVault"], bool):
+                    sambaVault=data["sambaVault"]
+                else:
+                    log.error(f"Invalid 'sambaVault' property for user {username}: must be a boolean.")
+                    continue
             
             if sftpUserMng.user_exists(username):
                 log.info(f"User {username} already exists, skipping creation.")
@@ -111,7 +121,12 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
                         log.error(f"Mountpoint real path does not exist for user {username}: {real_path}.")
                         continue
                     log.info(f"   - Ensuring mountpoint '{mount_name}' for user {username}.")
-                    u.mountpointManager.ensure_mountpoint(mount_name, real_path)
+                    if sambaVault:
+                        log.info(f"     - Creating Samba mountpoint for user {username}.")
+                        u.mountpointManager.ensure_samba_mountpoint(mount_name, real_path)
+                    else:
+                        log.info(f"     - Creating bind mountpoint for user {username}.")
+                        u.mountpointManager.ensure_mountpoint(mount_name, real_path)
             else:
                 log.info(f"No mountpoints to add for user {username}.")
             
@@ -243,7 +258,7 @@ def createJson(file:str,overwrite:bool)->bool:
     
     try:
         with open(file, "w") as f:
-            json.dump(data, f, indent=4, sort_keys=True)
+            json5.dump(data, f, indent=4, sort_keys=True)
         log.info(f"Successfully created JSON file {file} with {len(users)} users.")
     except Exception as e:
         log.error(f"Failed to create JSON file {file}: {e}")

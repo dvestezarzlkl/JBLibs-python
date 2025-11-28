@@ -1,10 +1,10 @@
-import sys
+import bcrypt
 from .lng.default import * 
 from .helper import loadLng
 from .term import restoreAndClearDown,savePos,getKey,cls
 loadLng()
 
-import re, bcrypt, getpass
+import re, getpass
 from .c_menu import printBlock
 from typing import Union,Callable
 

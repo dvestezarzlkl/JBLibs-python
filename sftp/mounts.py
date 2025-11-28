@@ -1,7 +1,7 @@
 from ..helper import getLogger
 log = getLogger("sftpMountsMng")
 
-import os
+import os,time
 import grp
 import subprocess
 from libs.JBLibs.sftp.mountPoint import sftpUserMountpoint
@@ -9,6 +9,7 @@ import libs.JBLibs.sftp.ssh as ssh
 from libs.JBLibs.sftp.glob import SAFE_NAME_RGX
 from libs.JBLibs.helper import getLogger,userExists,getUserHome
 from .userGrps import getUserGroups, addUSerToGroup
+from . import sambaPoint as smb
 
 FSTAB_DIR:str = "/etc/fstab.d"   # per-user fstab soubory
 MOUTPOINT_FILENAME:str = ".sftp_mounts_mng"  # název souboru s mountpointy v home adresáři uživatele
@@ -81,7 +82,14 @@ class mountpointsManager:
                 # zkontrolujeme, zda je možné bezpečně odmountovat
                 if not can_umount(mount_point.mountPath):
                     raise RuntimeError(f"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.")
-                subprocess.run(["umount", mp_to_delete.mountPath], check=True)
+                try:
+                    subprocess.run(["umount", mp_to_delete.mountPath], check=True)
+                except subprocess.CalledProcessError as e:
+                    log.debug(f"Initial umount failed for {mp_to_delete.mountPath}, retrying after delay")
+                    time.sleep(2)  # počkáme chvíli a zkusíme to znovu
+                    subprocess.run(["umount", mp_to_delete.mountPath], check=True)
+                    
+            
             if mp_to_delete.mountExists():
                 os.rmdir(mp_to_delete.mountPath)
                 
@@ -123,11 +131,37 @@ class mountpointsManager:
                 return mp
         return None
     
+    def ensure_samba_mountpoint(self, mount_name:str, real_path:str)->sftpUserMountpoint:
+        """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu přes sambu (CIFS).
+        Args:
+            mount_name (str): jméno mountpointu v jailu
+            real_path (str): reálná cesta k umístění
+        Returns:
+            sftpUserMountpoint: instance sftpUserMountpoint pro vytvořený mountpoint
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
+        """
+        self.__ensure_x_mountpoint(mount_name, real_path, samabVault=True)
+        
     def ensure_mountpoint(self, mount_name:str, real_path:str)->sftpUserMountpoint:
         """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
         Args:
             mount_name (str): jméno mountpointu v jailu
             real_path (str): reálná cesta k umístění
+        Returns:
+            sftpUserMountpoint: instance sftpUserMountpoint pro vytvořený mountpoint
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
+        """
+        self.__ensure_x_mountpoint(mount_name, real_path, samabVault=False)
+        
+        
+    def __ensure_x_mountpoint(self, mount_name:str, real_path:str, samabVault:bool)->sftpUserMountpoint:
+        """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
+        Args:
+            mount_name (str): jméno mountpointu v jailu
+            real_path (str): reálná cesta k umístění
+            samabVault (bool): zda vytvořit mountpoint přes sambu (CIFS) nebo bindem
         Returns:
             sftpUserMountpoint: instance sftpUserMountpoint pro vytvořený mountpoint
         Raises:
@@ -151,18 +185,25 @@ class mountpointsManager:
         
         jail_dir = ssh.ensureJail(self.username)
         mp = sftpUserMountpoint(jailPath=jail_dir, line=mount_name, val=real_path)
-        mp.ensureMountpoint(self.username)
-        
-        # pokusíme se vytvořit bind mount
-        try:
-            subprocess.run([
-                "mount",
-                "--bind",
-                real_path,
-                mp.mountPath
-            ], check=True)
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to bind mount {real_path} to {mount_name}: {e}")
+        if samabVault:
+            # vytvoříme mountpoint přes sambu
+            try:
+                smb.ensureMountpoint(mp)
+            except Exception as e:
+                raise RuntimeError(f"Failed to create Samba mountpoint {mount_name} for user {self.username}: {e}")
+        else:            
+            mp.ensureMountpoint(self.username)
+            
+            # pokusíme se vytvořit bind mount
+            try:
+                subprocess.run([
+                    "mount",
+                    "--bind",
+                    real_path,
+                    mp.mountPath
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Failed to bind mount {real_path} to {mount_name}: {e}")
         
         self.mountpoints.append(mp)
         self.__saveMountpoints()
@@ -236,7 +277,7 @@ class mountpointsManager:
                 group_name = group_info.gr_name
                 group_names.append(group_name)
                 if group_name not in curGroups:
-                    addUSerToGroup(group_name)
+                    addUSerToGroup(self.username, group_name)
             except Exception as e:
                 raise RuntimeError(f"Failed to ensure mountpoint user groups for user {self.username}: {e}")
 

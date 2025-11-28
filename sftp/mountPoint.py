@@ -1,6 +1,10 @@
+from libs.JBLibs.helper import getLogger
+log = getLogger("sftpUserMountpoint")
+
 import os
 import re
 import pwd
+import grp
 from typing import Union
 
 RGX_MOUNT_NAME = re.compile(r'^[a-zA-Z0-9._-]+$')
@@ -68,7 +72,13 @@ class sftpUserMountpoint:
         self.realPath:str = path
         """Cesta k reálnému umístění"""
         
-        self.mountPath:str = os.path.join(self.__jailPath, self.mountName)
+        self.__realPath_u:Union[tuple[str,int]] = None
+        """Jméno a UID uživatele, kterému realPath patří"""
+        
+        self.__realPath_g:Union[tuple[str,int]] = None
+        """Jméno a GID skupiny, které realPath patří"""
+        
+        self.mountPath:str = self.getMountPath()
         """Cesta k mountpointu v jailu včetně jména `mountName` - full path"""
                 
         if not self.__isDir(self.realPath):
@@ -110,7 +120,7 @@ class sftpUserMountpoint:
         Returns:
             bool: True pokud mountpoint existuje, jinak False
         """
-        return os.path.isdir(os.path.join(self.__jailPath, self.mountName))
+        return os.path.isdir(self.getMountPath())
     
     def isMountpointPathsOK(self)->bool:
         """Zkontroluje, zda mountpoint a reálná cesta mountu existují.
@@ -118,6 +128,30 @@ class sftpUserMountpoint:
             bool: True pokud oba existují, jinak False
         """
         return self.mountExists() and self.pathExists()
+    
+    def getMountPath(self)->str:
+        """Získá plnou cestu k mountpointu v jailu.
+        Returns:
+            str: cesta k mountpointu v jailu
+        """
+        return os.path.join(self.__jailPath, self.mountName)
+    
+    def __ensureMountpointPathPermissions(self, path:str, userName:str)->None:
+        """Nastaví vlastnictví a práva pro zadanou cestu mountpointu.
+        Args:
+            path (str): cesta k mountpointu
+            userName (str): jméno uživatele pro nastavení vlastníka a práv
+        Raises:
+            RuntimeError: pokud se nepodaří nastavit vlastnictví nebo práva
+        """
+        try:            
+            log.info(f"Setting ownership and permissions for mountpoint path {path}.")
+            pw = pwd.getpwnam(userName)
+            os.chown(path, pw.pw_uid, pw.pw_gid)
+            # os.chmod(path, 0o755) + force gid permissions from parent jail
+            os.chmod(path, 0o755 & ~0o020)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set ownership/permissions for mountpoint path {path}: {e}")
     
     def ensureMountpoint(self, userName:str)->str:
         """Zajistí, že mountpoint existuje, pokud ne, vytvoří ho.
@@ -128,9 +162,10 @@ class sftpUserMountpoint:
         Raises:
             RuntimeError: pokud se nepodaří vytvořit mountpoint
         """
-        mp=os.path.join(self.__jailPath, self.mountName)
+        mp=self.getMountPath()
         
         if self.__isDir(mp):
+            self.__ensureMountpointPathPermissions(mp, userName)
             self.mountPath=mp
             return mp
                     
@@ -138,14 +173,15 @@ class sftpUserMountpoint:
             raise RuntimeError(f"Mount real path does not exist or is not a directory: {self.realPath}" +(self.__symlinkAccepted and "" or " (symlinks are not accepted)"))
                 
         try:
+            log.info(f"Creating mountpoint {mp} for user {userName}.")
             os.makedirs(mp, exist_ok=True)
-            pw = pwd.getpwnam(userName)
-            os.chown(mp, pw.pw_uid, pw.pw_gid)
-            os.chmod(mp, 0o755)
-            self.mountPath=mp
-            return mp
         except Exception as e:
             raise RuntimeError(f"Failed to create mountpoint {mp}: {e}")
+    
+        self.__ensureMountpointPathPermissions(mp, userName)        
+        
+        self.mountPath=mp
+        return mp
     
     def isMounted(self)->bool:
         """Zkontroluje, zda je mountpoint namountován.
@@ -153,7 +189,7 @@ class sftpUserMountpoint:
             bool: True pokud je mountpoint namountován, jinak False
         """
         try:            
-            mp= " " + os.path.join(self.__jailPath, self.mountName) + " "
+            mp= " " + self.getMountPath(self) + " "
             with open("/proc/mounts","r") as f:
                 for line in f:
                     if mp in line:
@@ -161,6 +197,28 @@ class sftpUserMountpoint:
         except Exception:
             return False
         return False
+    
+    def forUser(self)->tuple[str,int]:
+        """Získá jméno a UID uživatele, realPath patří.
+        Returns:
+            tuple[str,int]: jméno uživatele a jeho UID
+        """
+        if self.__realPath_u is None:
+            st = os.stat(self.realPath)
+            pw = pwd.getpwuid(st.st_uid)
+            self.__realPath_u = (pw.pw_name, pw.pw_uid)
+        return self.__realPath_u
+        
+    def forGroup(self)->tuple[str,int]:
+        """Získá jméno a GID skupiny, které realPath patří.
+        Returns:
+            tuple[str,int]: jméno skupiny a její GID
+        """
+        if self.__realPath_g is None:
+            st = os.stat(self.realPath)
+            gr = grp.getgrgid(st.st_gid)
+            self.__realPath_g = (gr.gr_name, gr.gr_gid)
+        return self.__realPath_g
     
     def __repr__(self):
         return f"manifestMount(mountPoint='{self.mountName}', realPath='{self.realPath}') is OK: {self.isMountpointPathsOK()}"
