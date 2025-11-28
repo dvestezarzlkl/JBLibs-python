@@ -50,6 +50,16 @@ class smbHelp:
         """
         from shutil import which
         return which("smbd") is not None
+    
+    @staticmethod
+    def checkCIFSInstalled() -> bool:
+        """Zkontroluje, zda je CIFS nainstalován v systému.
+        
+        Returns:
+            bool: True pokud je CIFS nainstalován, jinak False.
+        """
+        from shutil import which
+        return which("mount.cifs") is not None
         
     @staticmethod        
     def ensureSambaUserPwd()->None:
@@ -151,10 +161,12 @@ class smbHelp:
 
 
     @staticmethod    
-    def ensureSambaSharePoint(target:str, share_base_name:str, forceUser:str, forceGrp:str)->None:
+    def ensureSambaSharePoint(target:str, for_user:str, share_base_name:str, forceUser:str, forceGrp:str)->None:
         """Přidá nový mount point do Samba konfigurace.
         Args:
             target (str): cesta k adresáři, který se má namountovat
+            for_user (str): uživatel, pro kterého je share určen pod tímto jménem se dělá sharepoint
+                    ne pod jménem forceUser
             share_base_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
             forceUser (str): uživatel, pod kterým bude mount point přístupný
             forceGrp (str): skupina, pod kterou bude mount point přístupný
@@ -185,7 +197,7 @@ class smbHelp:
         if st.st_gid != gr.gr_gid:
             raise RuntimeError(f"Samba mount target path {target} is not owned by group {forceGrp}.")
             
-        share_name=makeShareNameSafe(share_base_name,forceUser, True)
+        share_name=makeShareNameSafe(share_base_name,for_user, True)
                 
         log.info(f"Adding Samba mount point config to section [{share_name}]:")
         log.info(f" - target: {target}")
@@ -206,81 +218,126 @@ class smbHelp:
         smbHelp.write_or_replace_samba_section(share_name, share_cfg)
         
     @staticmethod
-    def removeSambaSharePoint(share_base_name:str, forUser:str)->None:
+    def removeSambaSharePoint(share_base_name:str, for_user:str)->None:
         """Odebere mount point ze Samba konfigurace.
         Args:
             share_base_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
-            forUser (str): uživatel, pro kterého je share určen
+            for_user (str): uživatel, pro kterého je share určen
         Raises:
             RuntimeError: pokud dojde k chybě při odebírání mount pointu
         """        
-        share_name=makeShareNameSafe(share_base_name,forUser, True)     
+        share_name=makeShareNameSafe(share_base_name,for_user, True)     
         log.info(f"Removing Samba mount point config for section [{share_name}].")
         smbHelp.write_or_replace_samba_section(share_name, "")  # přepíšeme prázdným obsahem – smaže se
-        
+            
     @staticmethod
-    def getFstabFileName(base_share_name:str, forUser:str)->str:
-        """Získá jméno fstab souboru pro zadaný mount point.
-        Args:
-            base_share_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
-            forUser (str): uživatel, pro kterého je share určen
+    def reloadSystemdDaemon()->bool:
+        """Restartuje systemd daemon po změně jednotek.
         Returns:
-            str: jméno fstab souboru pro daný mount point
+            bool: True pokud byl restart úspěšný, False pokud došlo k chybě
         """
-        return os.path.join("/etc/fstab.d", makeShareNameSafe(base_share_name, forUser, True)+".fstab")
-    
-    @staticmethod    
-    def ensureFstabCIFScfg(base_share_name:str, forUser:str, forGroup:str, target:str)->bool:
-        """Zajistí, že je v /etc/fstab.d konfigurace pro připojení Samba share.
-        Args:
-            base_share_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
-            forUser (str): uživatel, pro kterého je share určen
-            forGroup (str): skupina, pro kterou je share určen
-            target (str): cesta, kam se má share namountovat (sftp mountpoint)
-        Returns:
-            bool: True pokud vše ok
-        Raises:
-            RuntimeError: pokud dojde k chybě při úpravě /etc/fstab
+        log.info("Restarting systemd daemon.")
+        try:
+            proc = subprocess.run(
+                ["systemctl", "daemon-reload"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
+            log.info("Systemd daemon restarted successfully.")
+            time.sleep(0.5)  # počkáme chvilku, ať se systém stabilizuje
+            return True
+        except subprocess.CalledProcessError as e:
+            log.error(f"Failed to restart systemd daemon: {e.stderr.decode().strip()}")
+            log.exception(e)
+            return False
+            
+    @staticmethod
+    def ensureFstabCIFScfg(for_user:str, base_share_name: str, forceUser: str, forceGroup: str, target: str) -> bool:
         """
-        fstab_file=smbHelp.getFstabFileName(base_share_name, forUser)
-        cifs_line=smbHelp.getCIFSLine(base_share_name, target, forUser, forGroup)
+        Zajistí, že je v /etc/fstab správná a jediná konfigurace pro CIFS mount.
+        Nejprve odstraní staré verze podle komentáře, potom přidá nový řádek.
+        """
+
+        # nejdřív odstraníme starý zápis
+        smbHelp.removeFstabCIFScfg(base_share_name, for_user)
+
+        fstab_file = "/etc/fstab"
+        cifs_line = smbHelp.getCIFSLine(for_user, base_share_name, target, forceUser, forceGroup)
 
         try:
-            # pokud exituje tak bude přepsán
-            log.info(f"Ensuring CIFS mount line in {fstab_file}.")
-            with open(fstab_file, "w") as f:
+            # načti existující obsah
+            existing = []
+            if os.path.isfile(fstab_file):
+                with open(fstab_file, "r") as f:
+                    existing = f.readlines()
+
+            # pokud poslední řádek nekončí newline → přidej
+            need_newline = existing and not existing[-1].endswith("\n")
+
+            with open(fstab_file, "a") as f:
+                if need_newline:
+                    f.write("\n")
                 f.write(cifs_line + "\n")
-            os.chown(fstab_file, 0, 0)
-            os.chmod(fstab_file, 0o644)
+
+            log.info(
+                f"Added CIFS mount line to {fstab_file} "
+                f"for share '{base_share_name}' (user={for_user})."
+            )
             return True
+
         except Exception as e:
             log.error(f"Failed to ensure CIFS mount line in {fstab_file}: {e}")
             log.exception(e)
             return False
-    
+
+        
     @staticmethod    
-    def removeFstabCIFScfg(base_share_name:str, forUser:str)->bool:
-        """Odebere konfiguraci pro připojení Samba share z /etc/fstab.d
-        Args:
-            base_share_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
-            forUser (str): uživatel, pro kterého je share určen
-        Returns:
-            bool: True pokud byl řádek odstraněn nebo neexistoval
-        Raises:
-            RuntimeError: pokud dojde k chybě při úpravě /etc/fstab
+    def removeFstabCIFScfg(base_share_name: str, for_user: str) -> bool:
         """
-        fstab_file=smbHelp.getFstabFileName(base_share_name, forUser)
+        Odebere konfiguraci pro připojení Samba share z /etc/fstab.
+        Hledá přesný komentář generovaný getCifsCommnet().
+        
+        Returns:
+            bool: True pokud byl řádek odstraněn nebo neexistoval.
+        """
+
+        fstab_file = "/etc/fstab"
+        comment = smbHelp.getCifsCommnet(base_share_name, for_user).strip()
+
         if not os.path.isfile(fstab_file):
-            log.info(f"CIFS mount line file {fstab_file} does not exist. Nothing to remove.")
+            log.info(f"{fstab_file} does not exist. Nothing to remove.")
             return True
+
         try:
-            log.info(f"Removing CIFS mount line file {fstab_file}.")
-            os.remove(fstab_file)
+            with open(fstab_file, "r") as f:
+                lines = f.readlines()
+
+            new_lines = []
+            removed = False
+
+            for line in lines:
+                if comment in line:
+                    log.info(f"Removing CIFS fstab entry for {base_share_name} ({for_user}).")
+                    removed = True
+                    continue
+                new_lines.append(line)
+
+            if removed:
+                # odstraň prázdné řádky na konci
+                while new_lines and not new_lines[-1].strip():
+                    new_lines.pop()
+
+                with open(fstab_file, "w") as f:
+                    f.writelines(new_lines)
+
             return True
+
         except Exception as e:
-            log.error(f"Failed to remove CIFS mount line file {fstab_file}: {e}")
+            log.error(f"Failed to remove CIFS line in {fstab_file}: {e}")
             log.exception(e)
-            return False    
+            return False
+
 
     @staticmethod
     def getCIFSpath(base_share_name:str, forUser:str, host:str="127.0.0.1")->str:
@@ -296,36 +353,48 @@ class smbHelp:
         share_name=makeShareNameSafe(base_share_name, forUser, True)        
         return f"//{host}/{share_name}"
         
-    @staticmethod
-    def getCIFSLine(base_share_name:str, target:str, forUser:str, forGroup:str, host:str="127.0.0.1")->str:
-        """Získá řádek pro připojení Samba share do fstab.
+    def getCifsCommnet(base_share_name:str, forUser:str)->str:
+        """Získá komentář pro CIFS mount point.
         Args:
             base_share_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
-            target (str): cesta, kam se má share namountovat (sftp mountpoint)
             forUser (str): uživatel, pro kterého je share určen
-            forGroup (str): skupina, pro kterou je share určen
+        Returns:
+            str: komentář pro CIFS mount point
+        """
+        share_name=makeShareNameSafe(base_share_name, forUser, True)        
+        return f"# Samba SFTP mount {share_name} do not modify or remove"
+        
+    @staticmethod
+    def getCIFSLine(for_user:str, base_share_name:str, target:str, forceUser:str, forceGroup:str, host:str="127.0.0.1")->str:
+        """Získá řádek pro připojení Samba share do fstab.
+        Args:
+            for_user (str): uživatel, pro kterého je share určen
+            base_share_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
+            target (str): cesta, kam se má share namountovat (sftp mountpoint)
+            forceUser (str): uživatel, pro kterého je share určen
+            forceGroup (str): skupina, pro kterou je share určen
             host (str): hostname nebo IP adresa serveru Samba, defaultně je localhost
         Returns:
             str: řádek pro fstab
         """
-        cifs_path=smbHelp.getCIFSpath(base_share_name, forUser, host)
+        cifs_path=smbHelp.getCIFSpath(base_share_name, for_user, host)
         # získáme uid a gid pro forUser
         try:
-            pw = pwd.getpwnam(forUser)
+            pw = pwd.getpwnam(forceUser)
         except Exception as e:
-            raise RuntimeError(f"Samba mount point force user does not exist: {forUser}")
+            raise RuntimeError(f"Samba mount point force user does not exist: {forceUser}")
         try:
-            gr = grp.getgrnam(forGroup)
+            gr = grp.getgrnam(forceGroup)
         except Exception as e:
-            raise RuntimeError(f"Samba mount point force group does not exist: {forGroup}")
+            raise RuntimeError(f"Samba mount point force group does not exist: {forceGroup}")
         try:
             uid=str(pw.pw_uid)
             gid=str(gr.gr_gid)
         except Exception as e:
-            raise RuntimeError(f"Failed to get uid/gid for user/group {forUser}: {e}")
+            raise RuntimeError(f"Failed to get uid/gid for user/group {forceUser}: {e}")
         
         options=f"credentials={SMB_CRED_FILE},uid={uid},gid={gid},rw,iocharset=utf8,file_mode=0700,dir_mode=0700"
-        fstab_line=f"{cifs_path} {target} cifs {options} 0 0"
+        fstab_line=f"{cifs_path} {target} cifs {options} 0 0 " +smbHelp.getCifsCommnet(base_share_name, for_user)
         return fstab_line
 
     @staticmethod
@@ -410,8 +479,15 @@ def initEnsureSamba():
             return  # už inicializováno
         __INIT_DONE__ = True
     
+    err=[]
     if not smbHelp.checkSambaInstalled():
-        raise RuntimeError("Samba is not installed on this system.")
+        err.append("Samba is not installed on this system.")
+    
+    if not smbHelp.checkCIFSInstalled():
+        err.append("CIFS utilities are not installed on this system.")
+        
+    if err:
+        raise RuntimeError(" ; ".join(err))
     
     smbHelp.ensureSambaUserExists()
     smbHelp.ensureSambaCredFile()
@@ -464,7 +540,7 @@ def makeShareNameSafe(name:str,username:str,prefixAdd:bool=True)->str:
         safe_name=f"sftp_mount_{safe_name}"
     return safe_name
 
-def removeSharePoint(mp:sftpUserMountpoint)->None:
+def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
     """Odebere mount point ze Samba konfigurace.
     Args:
         mp (sftpUserMountpoint): instance mount pointu
@@ -472,11 +548,11 @@ def removeSharePoint(mp:sftpUserMountpoint)->None:
         RuntimeError: pokud dojde k chybě při odebírání mount pointu
     """
     share_base_name=mp.mountName
-    forUser, uid = mp.forUser()
+    userOwner, uid = mp.forUser()
     
     log.info(f"Removing Samba SFTP mount point for share {share_base_name}.")
-    cifs_path=smbHelp.getCIFSpath(share_base_name, forUser)
-    if smbHelp.isMounted(share_base_name, forUser):
+    cifs_path=smbHelp.getCIFSpath(share_base_name, for_user)
+    if smbHelp.isMounted(share_base_name, for_user):
         # umount it
         log.info(f"Unmounting Samba SFTP mount point {cifs_path} before removal.")
         try:
@@ -493,14 +569,14 @@ def removeSharePoint(mp:sftpUserMountpoint)->None:
     
     # odstranění konfigu z fstab
     log.info(f" - Removing fstab CIFS config for Samba SFTP mount point {share_base_name}.")
-    if not smbHelp.removeFstabCIFScfg(share_base_name, forUser):
+    if not smbHelp.removeFstabCIFScfg(share_base_name, for_user):
         msg=f"Failed to remove fstab CIFS line for Samba SFTP mount point {share_base_name}."
         log.error(msg)
         raise RuntimeError(msg)
     
     # odstranění konfigu ze samba
     log.info(f" - Removing Samba SFTP mount point configuration for share {share_base_name}.")
-    smbHelp.removeSambaSharePoint(share_base_name, forUser)
+    smbHelp.removeSambaSharePoint(share_base_name, for_user)
         
     # odstranění mountpointu
     if os.path.isdir(mp.mountPath):
@@ -513,14 +589,15 @@ def removeSharePoint(mp:sftpUserMountpoint)->None:
             log.exception(e)
             raise RuntimeError(msg)
         
-        
+    smbHelp.reloadSystemdDaemon()
     log.info(f"< Samba SFTP mount point for share {share_base_name} removed successfully.")
     
   
 # base_share_name:str, source:str, target:str, forceUser:str, forceGrp:str)->str:
-def ensureMountpoint(mp:sftpUserMountpoint)->str:
+def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
     """Zajistí existenci konfigu, uživatele a mountpointu pro Samba SFTP share. A samozřejmě že je i připojen
     Args:
+        for_user (str): uživatel, pro kterého je mount point určen
         mp (sftpUserMountpoint): instance mount pointu
     Returns:
         str: cesta k mount pointu
@@ -560,21 +637,22 @@ def ensureMountpoint(mp:sftpUserMountpoint)->str:
                 
         log.info(f" - Ensuring Samba SFTP mount point for share {base_share_name} at target {source}.")
         # vytvoří sourcePath  > //localhost/sftp_mount_user_sharename
-        smbHelp.ensureSambaSharePoint(source, base_share_name, forceUser, forceGrp)
+        smbHelp.ensureSambaSharePoint(source, for_user, base_share_name, forceUser, forceGrp)
         if not restartSambaService():
             msg=f"Failed to restart Samba service after adding mount point for share {base_share_name}."
             log.error(msg)
             raise RuntimeError(msg)
         
         log.info(f" - Ensuring fstab CIFS config for Samba SFTP mount point {base_share_name}.")
-        if not smbHelp.ensureFstabCIFScfg(base_share_name, forceUser,forceGrp, target):
+        if not smbHelp.ensureFstabCIFScfg(for_user, base_share_name, forceUser,forceGrp, target):
             msg=f"Failed to ensure fstab CIFS line for Samba SFTP mount point {base_share_name}."
             log.error(msg)
             raise RuntimeError(msg)
+        smbHelp.reloadSystemdDaemon()
         
         # check mounted
         log.info(f" - Ensuring Samba SFTP mount point {base_share_name} is mounted.")
-        cifs_path=smbHelp.getCIFSpath(base_share_name, forceUser)
+        cifs_path=smbHelp.getCIFSpath(base_share_name, for_user)
         if smbHelp.isMounted(base_share_name, forceUser):
             log.info(f"< Samba SFTP mount point {cifs_path} is already mounted.")
             # už je namountováno
@@ -598,12 +676,6 @@ def ensureMountpoint(mp:sftpUserMountpoint)->str:
         log.error(msg)
         log.exception(e)
         log.info(f" - Cleaning up Samba SFTP")
-        try:
-            removeSharePoint(mp)
-        except Exception as e2:
-            log.error(f"   - Failed to clean up Samba SFTP")
-            log.exception(e2)
-        raise RuntimeError(msg)
     
     log.info(f"< Samba SFTP mount point {cifs_path} mounted successfully.")
     return cifs_path

@@ -77,26 +77,34 @@ class mountpointsManager:
         if mp_to_delete is None:
             raise RuntimeError(f"Mountpoint {mount_point.mountName} does not exist for user {self.username}.")
         
-        try:
-            if mount_point.isMounted():
-                # zkontrolujeme, zda je možné bezpečně odmountovat
-                if not can_umount(mount_point.mountPath):
-                    raise RuntimeError(f"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.")
-                try:
-                    subprocess.run(["umount", mp_to_delete.mountPath], check=True)
-                except subprocess.CalledProcessError as e:
-                    log.debug(f"Initial umount failed for {mp_to_delete.mountPath}, retrying after delay")
-                    time.sleep(2)  # počkáme chvíli a zkusíme to znovu
-                    subprocess.run(["umount", mp_to_delete.mountPath], check=True)
-                    
-            
-            if mp_to_delete.mountExists():
-                os.rmdir(mp_to_delete.mountPath)
+        if mp_to_delete.isSambaVault():
+            # smažeme mountpoint přes sambu
+            try:
+                smb.removeSharePoint(self.username, mp_to_delete)
+            except Exception as e:
+                raise RuntimeError(f"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}")
+        
+        else:
+            try:
+                if mount_point.isMounted():
+                    # zkontrolujeme, zda je možné bezpečně odmountovat
+                    if not can_umount(mount_point.mountPath):
+                        raise RuntimeError(f"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.")
+                    try:
+                        subprocess.run(["umount", mp_to_delete.mountPath], check=True)
+                    except subprocess.CalledProcessError as e:
+                        log.debug(f"Initial umount failed for {mp_to_delete.mountPath}, retrying after delay")
+                        time.sleep(2)  # počkáme chvíli a zkusíme to znovu
+                        subprocess.run(["umount", mp_to_delete.mountPath], check=True)
+                        
                 
-            self.mountpoints.remove(mp_to_delete)
-            self.__saveMountpoints() # jen pokud nic neselže jinak znovu proběhnou kroky výše
-        except Exception as e:
-            raise RuntimeError(f"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}")
+                if mp_to_delete.mountExists():
+                    os.rmdir(mp_to_delete.mountPath)
+                    
+                self.mountpoints.remove(mp_to_delete)
+                self.__saveMountpoints() # jen pokud nic neselže jinak znovu proběhnou kroky výše
+            except Exception as e:
+                raise RuntimeError(f"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}")
  
     def umount_will_be_ok(self) -> bool:
         """Zkontroluje, zda je možné bezpečně odmountovat všechny mountpointy uživatele.
@@ -141,7 +149,7 @@ class mountpointsManager:
         Raises:
             RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
         """
-        self.__ensure_x_mountpoint(mount_name, real_path, samabVault=True)
+        self.__ensure_x_mountpoint(mount_name, real_path, sambaVault=True)
         
     def ensure_mountpoint(self, mount_name:str, real_path:str)->sftpUserMountpoint:
         """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
@@ -153,15 +161,15 @@ class mountpointsManager:
         Raises:
             RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
         """
-        self.__ensure_x_mountpoint(mount_name, real_path, samabVault=False)
+        self.__ensure_x_mountpoint(mount_name, real_path, sambaVault=False)
         
         
-    def __ensure_x_mountpoint(self, mount_name:str, real_path:str, samabVault:bool)->sftpUserMountpoint:
+    def __ensure_x_mountpoint(self, mount_name:str, real_path:str, sambaVault:bool)->sftpUserMountpoint:
         """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
         Args:
             mount_name (str): jméno mountpointu v jailu
             real_path (str): reálná cesta k umístění
-            samabVault (bool): zda vytvořit mountpoint přes sambu (CIFS) nebo bindem
+            sambaVault (bool): zda vytvořit mountpoint přes sambu (CIFS) nebo bindem
         Returns:
             sftpUserMountpoint: instance sftpUserMountpoint pro vytvořený mountpoint
         Raises:
@@ -184,11 +192,11 @@ class mountpointsManager:
                     break  # pokračujeme v tvorbě nového mountpointu
         
         jail_dir = ssh.ensureJail(self.username)
-        mp = sftpUserMountpoint(jailPath=jail_dir, line=mount_name, val=real_path)
-        if samabVault:
+        mp = sftpUserMountpoint(jailPath=jail_dir, line=mount_name, val=real_path,sambaVault=sambaVault)
+        if sambaVault:
             # vytvoříme mountpoint přes sambu
             try:
-                smb.ensureMountpoint(mp)
+                smb.ensureMountpoint(self.username,mp)
             except Exception as e:
                 raise RuntimeError(f"Failed to create Samba mountpoint {mount_name} for user {self.username}: {e}")
         else:            

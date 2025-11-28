@@ -16,7 +16,7 @@ class sftpUserMountpoint:
         mountPath (str): cesta k mountpointu v jailu včetně jména `mountName`
         realPath (str): Cesta k reálnému umístění
     """
-    def __init__(self, jailPath:str, line:str, val:Union[str|None]=None, acceptSymlink:bool=False):
+    def __init__(self, jailPath:str, line:str, val:Union[str|None]=None, acceptSymlink:bool=False, sambaVault:bool=False)->None:
         """Inicializace mountu ze zadaného řádku manifestu.
         Args:
             line (str): buď:
@@ -34,6 +34,9 @@ class sftpUserMountpoint:
         self.__jailPath = jailPath
         if not self.__isDir(self.__jailPath):
             raise ValueError(f"Jail path must be an existing directory: {self.__jailPath}")
+        
+        self.__sambaVault:bool = bool(sambaVault)
+        """Pokud True, jedná se o mountpoint pro Samba Vault (speciální režim)"""
         
         pos= line.find("=")
         point=None
@@ -59,6 +62,11 @@ class sftpUserMountpoint:
         # preventivní kontroly
         if not point or not path:
             raise ValueError(f"Invalid manifest mount line: {line}")
+        
+        # pokud point obsahuje jako první vykřičnéník tak je to mountpoint pro samba vault
+        if point.startswith("!"):
+            self.__sambaVault = True
+            point = point[1:]  # odstraníme vykřičník z názvu mountpointu
         
         if not RGX_MOUNT_NAME.match(point):
             raise ValueError(f"Invalid mount point name: {point}")
@@ -87,6 +95,13 @@ class sftpUserMountpoint:
                 + ("" if self.__symlinkAccepted else " and symlinks are not allowed")
             )            
 
+    def isSambaVault(self)->bool:
+        """Zkontroluje, zda se jedná o mountpoint pro Samba Vault.
+        Returns:
+            bool: True pokud je to mountpoint pro Samba Vault, jinak False
+        """
+        return self.__sambaVault
+
     def __isDir(self, path:str)->bool:
         """Zkontroluje, zda zadaná cesta je adresář.
         v závislosti na self.symlinkAccepted buď povolí nebo zakáže symlinky.
@@ -106,7 +121,8 @@ class sftpUserMountpoint:
         Returns:
             str: řádek manifestu
         """
-        return f"{self.mountName}={self.realPath}"
+        prefix = "!" if self.__sambaVault else ""
+        return f"{prefix}{self.mountName}={self.realPath}"
     
     def pathExists(self)->bool:
         """Zkontroluje, zda reálná cesta mountu existuje.
@@ -188,13 +204,14 @@ class sftpUserMountpoint:
         Returns:
             bool: True pokud je mountpoint namountován, jinak False
         """
-        try:            
-            mp= " " + self.getMountPath(self) + " "
+        try:
+            mp= self.getMountPath()
+            mp= f" {mp} "
             with open("/proc/mounts","r") as f:
                 for line in f:
                     if mp in line:
                         return True
-        except Exception:
+        except Exception as e:
             return False
         return False
     

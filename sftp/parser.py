@@ -266,3 +266,49 @@ def createJson(file:str,overwrite:bool)->bool:
         return False
     
     return True
+
+def uninstallUser(username:str|sftpUserMng)->bool:
+    """Odinstaluje zadaného sftpUserMng uživatele ze systému.
+    Args:
+        username (str): jméno uživatele k odinstalaci
+    Returns:
+        bool: True pokud se odinstalace podařila, jinak False
+    """
+    log.info(f"Uninstalling SFTP user {username}.")
+    try:
+        if isinstance(username, str):
+            u = sftpUserMng(username)
+        else:
+            u = username
+        if not u.ok:
+            log.error(f"User {username} is not a valid SFTP user.")
+            return False
+        u.delete_user()
+        log.info(f"Successfully uninstalled SFTP user {username}.")
+        return True
+    except Exception as e:
+        log.error(f"Failed to uninstall SFTP user {username}: {e}")
+        log.exception(e)
+        return False
+    
+def uninstallAllUsers()->bool:
+    """Odinstaluje všechny sftpUserMng uživatele ze systému.
+    Returns:
+        bool: True pokud se odinstalace podařila, jinak False
+    """
+    log.info("Uninstalling all SFTP users.")
+    try:
+        users = listActiveUsers()
+    except Exception as e:
+        log.error(f"Failed to list active SFTP users: {e}")
+        log.exception(e)
+        return False
+    if users is None:
+        log.error("Failed to list active SFTP users.")
+        return False
+    
+    success=True
+    for u in users:
+        if not uninstallUser(u):
+            success=False
+    return success
