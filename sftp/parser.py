@@ -10,6 +10,7 @@ from typing import Union
 from .user import sftpUserMng
 from . import ssh
 from .glob import SAFE_NAME_RGX, BASE_DIR
+from . import sambaPoint as smb
 
 def safeName(name:str,throw:bool=True)->bool:
     """Otestuje, zda je zadané jméno bezpečné pro uživatelské jméno nebo mountpoint.
@@ -129,6 +130,7 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
                         u.mountpointManager.ensure_mountpoint(mount_name, real_path)
             else:
                 log.info(f"No mountpoints to add for user {username}.")
+            smb.postEnsureAllMountpoints()
             
             # přidáme certifikáty
             log.info(f"Adding certificates for user {username}.")

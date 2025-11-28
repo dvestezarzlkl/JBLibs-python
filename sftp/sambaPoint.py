@@ -21,7 +21,9 @@ __INIT_DONE__=False
 __INIT_LOCK__=threading.Lock()
 """Zámek pro inicializaci."""
 
-class smbHelp:
+class smbHelp:    
+    toMount:list[str] = []
+    requireSambaRestart:bool = False
 
     @staticmethod
     def ensureSambaCredFile():
@@ -103,7 +105,7 @@ class smbHelp:
                 SMB_SFT_USER
             ], check=True)
 
-            smbHelp.ensureSambaUserPwd()        
+            smbHelp.ensureSambaUserPwd()
             
             log.info(f"Samba SFTP user {SMB_SFT_USER} created successfully.")
         except subprocess.CalledProcessError as e:
@@ -118,7 +120,10 @@ class smbHelp:
         """
 
         section_header = f"[{section}]"
-        new_section_block = section_header + "\n" + content.rstrip() + "\n"
+        if content.strip():
+            new_section_block = section_header + "\n" + content.rstrip() + "\n"
+        else:
+            new_section_block = ""
 
         conf_file = os.path.join(SMB_CFG_DIR, "smb.conf")
         if not os.path.isfile(conf_file):
@@ -212,8 +217,8 @@ class smbHelp:
     browsable = yes
     writable = yes
     read only = no
-    create mask = 0700
-    directory mask = 0700
+    create mask = 0770
+    directory mask = 0770
     """
         smbHelp.write_or_replace_samba_section(share_name, share_cfg)
         
@@ -244,8 +249,9 @@ class smbHelp:
                 stderr=subprocess.PIPE,
                 check=True
             )
-            log.info("Systemd daemon restarted successfully.")
-            time.sleep(0.5)  # počkáme chvilku, ať se systém stabilizuje
+            log.info("Systemd daemon restarted successfully - waiting for stabilization.")
+            time.sleep(3)  # počkáme chvilku, ať se systém stabilizuje
+            log.info("Systemd daemon stabilization wait complete.")
             return True
         except subprocess.CalledProcessError as e:
             log.error(f"Failed to restart systemd daemon: {e.stderr.decode().strip()}")
@@ -393,7 +399,8 @@ class smbHelp:
         except Exception as e:
             raise RuntimeError(f"Failed to get uid/gid for user/group {forceUser}: {e}")
         
-        options=f"credentials={SMB_CRED_FILE},uid={uid},gid={gid},rw,iocharset=utf8,file_mode=0700,dir_mode=0700"
+        # options=f"credentials={SMB_CRED_FILE},uid={uid},gid={gid},rw,iocharset=utf8,file_mode=0770,dir_mode=0770"
+        options=f"credentials={SMB_CRED_FILE},uid=0,gid=0,rw,iocharset=utf8,file_mode=0777,dir_mode=0777"
         fstab_line=f"{cifs_path} {target} cifs {options} 0 0 " +smbHelp.getCifsCommnet(base_share_name, for_user)
         return fstab_line
 
@@ -520,6 +527,7 @@ def restartSambaService()->bool:
     if not smbHelp.waitSambaAlive(5.0, 0.2):
         log.error(f" < {SRVNM} - {SRV} service did not become ready after restart.")
         return False
+    time.sleep(1)  # počkáme chvilku, ať se systém stabilizuje
     log.info(f"< {SRVNM} service restarted successfully.")
     return True
 
@@ -552,6 +560,7 @@ def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
     
     log.info(f"Removing Samba SFTP mount point for share {share_base_name}.")
     cifs_path=smbHelp.getCIFSpath(share_base_name, for_user)
+    
     if smbHelp.isMounted(share_base_name, for_user):
         # umount it
         log.info(f"Unmounting Samba SFTP mount point {cifs_path} before removal.")
@@ -638,17 +647,13 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
         log.info(f" - Ensuring Samba SFTP mount point for share {base_share_name} at target {source}.")
         # vytvoří sourcePath  > //localhost/sftp_mount_user_sharename
         smbHelp.ensureSambaSharePoint(source, for_user, base_share_name, forceUser, forceGrp)
-        if not restartSambaService():
-            msg=f"Failed to restart Samba service after adding mount point for share {base_share_name}."
-            log.error(msg)
-            raise RuntimeError(msg)
+        smbHelp.requireSambaRestart = True
         
         log.info(f" - Ensuring fstab CIFS config for Samba SFTP mount point {base_share_name}.")
         if not smbHelp.ensureFstabCIFScfg(for_user, base_share_name, forceUser,forceGrp, target):
             msg=f"Failed to ensure fstab CIFS line for Samba SFTP mount point {base_share_name}."
             log.error(msg)
             raise RuntimeError(msg)
-        smbHelp.reloadSystemdDaemon()
         
         # check mounted
         log.info(f" - Ensuring Samba SFTP mount point {base_share_name} is mounted.")
@@ -658,19 +663,7 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
             # už je namountováno
             return cifs_path
         
-        # mount it
-        log.info(f" - Mounting Samba SFTP mount point {cifs_path}.")
-        try:
-            import subprocess
-            subprocess.run([
-                "mount",
-                cifs_path
-            ], check=True)
-        except subprocess.CalledProcessError as e:
-            msg=f"Failed to mount Samba SFTP mount point {cifs_path}: {e}"
-            log.error(msg)
-            log.exception(e)
-            raise RuntimeError(msg)        
+        smbHelp.toMount.append(cifs_path)        
     except Exception as e:
         msg=f"Failed to ensure Samba SFTP mount point: {e}"
         log.error(msg)
@@ -680,4 +673,37 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
     log.info(f"< Samba SFTP mount point {cifs_path} mounted successfully.")
     return cifs_path
     
-    
+def postEnsureAllMountpoints()->None:
+    """Provede potřebné akce po zajištění všech mount pointů.
+    Zatím pouze restartuje Samba službu, pokud bylo potřeba.
+    """
+    if smbHelp.requireSambaRestart:
+        log.info("Post-processing: Restarting Samba service as required.")
+        if not restartSambaService():
+            log.error(" < Failed to restart Samba service during post-processing of mount points.")
+        else:
+            log.info("Samba service restarted successfully during post-processing of mount points.")
+    else:
+        log.info("Post-processing: No Samba service restart required.")
+            
+    if smbHelp.toMount:
+        log.info("Post-processing: waiting 2 seconds.")
+        time.sleep(2)  # počkáme chvilku, ať se systém stabilizuje
+        log.info("Post-processing: Reloading systemd daemon before mounting Samba SFTP mount points.")
+        smbHelp.reloadSystemdDaemon()
+        log.info("Post-processing: waiting 3 seconds.")
+        time.sleep(3)  # počkáme chvilku, ať se systém stabilizuje
+        log.info("Post-processing: Mounting Samba SFTP mount points.")
+        for mnt in smbHelp.toMount:
+            log.info(f"Post-processing: Ensuring mount of Samba SFTP mount point {mnt}.")
+            try:
+                import subprocess
+                subprocess.run([
+                    "mount",
+                    mnt
+                ], check=True)
+                log.info(f"Samba SFTP mount point {mnt} mounted successfully during post-processing.")
+            except subprocess.CalledProcessError as e:
+                log.error(f" < Failed to mount Samba SFTP mount point {mnt} during post-processing: {e}")
+    else:
+        log.info("Post-processing: No Samba SFTP mount points to mount.")
