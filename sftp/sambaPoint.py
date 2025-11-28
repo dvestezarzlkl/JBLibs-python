@@ -5,6 +5,7 @@ import os,re,pwd,time,grp,subprocess,socket
 from ..systemdService import c_service
 from .mountPoint import sftpUserMountpoint
 import threading
+from .ssh import restart_sshd
 
 SMB_CFG_DIR:str = "/etc/samba"
 
@@ -556,7 +557,7 @@ def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
         RuntimeError: pokud dojde k chybě při odebírání mount pointu
     """
     share_base_name=mp.mountName
-    userOwner, uid = mp.forUser()
+    restart_sshd()
     
     log.info(f"Removing Samba SFTP mount point for share {share_base_name}.")
     cifs_path=smbHelp.getCIFSpath(share_base_name, for_user)
