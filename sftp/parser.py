@@ -11,6 +11,25 @@ from .user import sftpUserMng
 from . import ssh
 from .glob import SAFE_NAME_RGX, BASE_DIR
 from . import sambaPoint as smb
+from typing import Dict
+
+class mountpointPerms:
+    def __init__(self,row:dict)->None:
+        self.my:bool = bool(row.get("my", True))
+        """Pokud True, jedná se o mountpoint vlastněný uživatelem"""
+        
+        self.rw:bool = bool(row.get("rw", True))
+        """Pokud True, jedná se o read-write mountpoint, jinak readonly"""
+        
+class mountpointsPerms(Dict[str, mountpointPerms]):
+    """A dictionary where keys are strings and values are instances of mountpointPerms."""
+    def __init__(self, data:Dict[str, dict])->None:
+        super().__init__()
+        for key, value in data.items():
+            if isinstance(value, dict):
+                self[key] = mountpointPerms(value)
+            else:
+                log.warning(f"Invalid mountpoint permissions entry for '{key}': expected a dictionary.")        
 
 def safeName(name:str,throw:bool=True)->bool:
     """Otestuje, zda je zadané jméno bezpečné pro uživatelské jméno nebo mountpoint.
@@ -105,6 +124,13 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
                     log.error(f"Failed to create user {username}.")
                     continue                    
             
+            # načteme nastavení mountpointů
+            mpSet=mountpointsPerms({})
+            if "pointsSet" in data and isinstance(data["pointsSet"], dict):
+                log.info(f" - Found mountpoint permissions for user {username}.")
+                mpSet=mountpointsPerms(data["pointsSet"])
+            
+            
             # přidáme mountpointy
             log.info(f"Adding mountpoints for user {username}.")
             if "sftpmounts" in data and isinstance(data["sftpmounts"], dict):
@@ -123,8 +149,10 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
                         continue
                     log.info(f"   - Ensuring mountpoint '{mount_name}' for user {username}.")
                     if sambaVault:
+                        mps=mpSet.get(mount_name, mountpointPerms({}))
+                        log.info(f"     - Mountpoint permissions for user {username}, mount '{mount_name}': my={mps.my}, rw={mps.rw}")                        
                         log.info(f"     - Creating Samba mountpoint for user {username}.")
-                        u.mountpointManager.ensure_samba_mountpoint(mount_name, real_path)
+                        u.mountpointManager.ensure_samba_mountpoint(mount_name, real_path, my=mps.my, rw=mps.rw)
                     else:
                         log.info(f"     - Creating bind mountpoint for user {username}.")
                         u.mountpointManager.ensure_mountpoint(mount_name, real_path)

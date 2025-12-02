@@ -14,9 +14,18 @@ class sftpUserMountpoint:
     Attributes:
         mountName (str): jméno adresáře v jailu
         mountPath (str): cesta k mountpointu v jailu včetně jména `mountName`
-        realPath (str): Cesta k reálnému umístění
+        realPath (str): Cesta k reálnému umístění        
     """
-    def __init__(self, jailPath:str, line:str, val:Union[str|None]=None, acceptSymlink:bool=False, sambaVault:bool=False)->None:
+    def __init__(
+        self,
+        jailPath:str,
+        line:str,
+        val:Union[str|None]=None,
+        acceptSymlink:bool=False,
+        sambaVault:bool=False,
+        rw:bool=True,
+        my:bool=False
+    )->None:
         """Inicializace mountu ze zadaného řádku manifestu.
         Args:
             line (str): buď:
@@ -93,7 +102,13 @@ class sftpUserMountpoint:
             raise ValueError(
                 f"Invalid realPath {self.realPath}: path must be an existing directory"
                 + ("" if self.__symlinkAccepted else " and symlinks are not allowed")
-            )            
+            )
+            
+        self.rw:bool = bool(rw)
+        """Pokud True, jedná se o read-write mountpoint, jinak readonly"""
+        
+        self.my:bool = bool(my)
+        """Pokud True, jedná se o mountpoint vlastněný uživatelem, jinak root"""
 
     def isSambaVault(self)->bool:
         """Zkontroluje, zda se jedná o mountpoint pro Samba Vault.

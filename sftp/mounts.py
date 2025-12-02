@@ -139,7 +139,7 @@ class mountpointsManager:
                 return mp
         return None
     
-    def ensure_samba_mountpoint(self, mount_name:str, real_path:str)->sftpUserMountpoint:
+    def ensure_samba_mountpoint(self, mount_name:str, real_path:str, my:bool=False, rw:bool=True)->sftpUserMountpoint:
         """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu přes sambu (CIFS).
         Args:
             mount_name (str): jméno mountpointu v jailu
@@ -149,7 +149,7 @@ class mountpointsManager:
         Raises:
             RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
         """
-        self.__ensure_x_mountpoint(mount_name, real_path, sambaVault=True)
+        self.__ensure_x_mountpoint(mount_name, real_path, my=my, rw=rw, sambaVault=True)
         
     def ensure_mountpoint(self, mount_name:str, real_path:str)->sftpUserMountpoint:
         """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
@@ -161,10 +161,17 @@ class mountpointsManager:
         Raises:
             RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při vytváření mountpointu
         """
-        self.__ensure_x_mountpoint(mount_name, real_path, sambaVault=False)
+        self.__ensure_x_mountpoint(mount_name, real_path, my=False, rw=True, sambaVault=False)
         
         
-    def __ensure_x_mountpoint(self, mount_name:str, real_path:str, sambaVault:bool)->sftpUserMountpoint:
+    def __ensure_x_mountpoint(
+        self,
+        mount_name:str,
+        real_path:str,
+        my:bool=False,
+        rw:bool=True,
+        sambaVault:bool=True
+    )->sftpUserMountpoint:
         """Zajistí, že uživatel má ve svém jailu vytvořený mountpoint pro zadanou reálnou cestu.
         Args:
             mount_name (str): jméno mountpointu v jailu
@@ -192,7 +199,14 @@ class mountpointsManager:
                     break  # pokračujeme v tvorbě nového mountpointu
         
         jail_dir = ssh.ensureJail(self.username)
-        mp = sftpUserMountpoint(jailPath=jail_dir, line=mount_name, val=real_path,sambaVault=sambaVault)
+        mp = sftpUserMountpoint(
+            jailPath=jail_dir,
+            line=mount_name,
+            val=real_path,
+            sambaVault=sambaVault,
+            my=my,
+            rw=rw
+        )
         if sambaVault:
             # vytvoříme mountpoint přes sambu
             try:
