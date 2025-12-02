@@ -215,6 +215,64 @@ class sftpUserMng:
         if proc.stdout.strip():
             raise RuntimeError(f"Some processes of {self.username} are still running.")
 
+    def __delete_jail(self, queryNoEmpty:bool=True)->bool:
+        """Odstraní pouze domovský adresář uživatele.  
+        Nepoužívat, používá se interně při mazání uživatele.
+            
+        Raises:
+            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při mazání domovského adresáře
+        """
+        try:
+            # teď by měly být mountpointy pryč a adresář prázdný, pokud ne tak tam někdo něco vytvořil mimo pointy a 
+            # mohou to být důležité data, takže dotaz
+            jailPath = ssh.ensureJail(self.username, testOnly=True)
+            if jailPath and os.path.exists(jailPath) and os.listdir(jailPath) and queryNoEmpty:
+                log.warning(f"Jail directory {jailPath} of user {self.username} is not empty after removing mountpoints.")
+                if not confirm(f"Home directory {jailPath} is not empty after removing mountpoints. Do you want to continue deleting the user and its home directory?\nThis will remove all data in the home directory. (y/n): "):
+                    msg=f"User deletion for {jailPath} was cancelled by user due to non-empty home directory."
+                    log.warning(msg)
+                    return False
+            # odstraníme home
+            log.info(f"Deleting jail directory {jailPath} of user {self.username}.")
+            if os.path.exists(jailPath):
+                os.rmdir(jailPath)
+            return True
+        except Exception as e:
+            log.error(f"Failed to delete home directory {self.homeDir} of user {self.username}: {e}")
+            log.exception(e)
+            return False
+        
+    def __cleanupSSHFiles(self)->None:
+        """Odstraní zbytky po ssh konfiguraci, tzn známé soubory a adresáře.
+        """
+        if not self.ok or not self.homeDir:
+            log.error(f"User {self.username} cannot cleanup SSH files because it is not properly initialized.")
+            return
+        
+        files=[
+            ".ssh/authorized_keys",
+            ".sftp_certs",
+        ]
+        
+        for f in files:
+            path = os.path.join(self.homeDir, f)
+            try:
+                if os.path.exists(path):
+                    log.info(f"Removing SSH related file {path} for user {self.username}.")
+                    os.remove(path)
+            except Exception as e:
+                log.warning(f"Failed to remove SSH related file {path} for user {self.username}: {e}")
+                log.exception(e)
+                
+        ssh_dir = os.path.join(self.homeDir, ".ssh")
+        try:
+            log.info(f"Removing SSH directory {ssh_dir} for user {self.username}.")
+            if os.path.exists(ssh_dir) and os.path.isdir(ssh_dir):
+                os.rmdir(ssh_dir)
+        except Exception as e:
+            log.warning(f"Failed to remove SSH directory {ssh_dir} for user {self.username}: {e}")
+            log.exception(e)
+
     def delete_user(self)->None:
         """Odstraní systémového uživatele a jeho domovský adresář.
         Raises:
@@ -239,15 +297,19 @@ class sftpUserMng:
             log.info(f"Deleting all mountpoints for user {self.username}.")
             self.mountpointManager.deleteMountpoint(None)
             
-            # teď by měly být mountpointy pryč a adresář prázdný, pokud ne tak tam někdo něco vytvořil mimo pointy a 
-            # mohou to být důležité data, takže dotaz
-            jailPath = ssh.ensureJail(self.username, testOnly=True)
-            if jailPath and os.path.exists(jailPath) and os.listdir(jailPath):
-                log.warning(f"Jail directory {jailPath} of user {self.username} is not empty after removing mountpoints.")
-                if not confirm(f"Home directory {jailPath} is not empty after removing mountpoints. Do you want to continue deleting the user and its home directory?\nThis will remove all data in the home directory. (y/n): "):
-                    msg=f"User deletion for {jailPath} was cancelled by user due to non-empty home directory."
-                    log.warning(msg)
-                    raise RuntimeError(msg)
+            if not self.__delete_jail(queryNoEmpty=True):
+                raise RuntimeError(f"Failed to delete jail for user {self.username}.")
+            
+            # teď je možné smazat mount list
+            log.info(f"Finishing cleanup of mountpoints for user {self.username}.")
+            try:
+                fl=os.path.join(self.homeDir, ".sftp_mounts_mng")
+                if os.path.exists(fl):
+                    os.remove(fl)
+            except Exception as e:
+                log.warning(f"Failed to remove mountpoints management file for user {self.username}: {e}")
+                log.exception(e)
+                raise RuntimeError(f"Failed to remove mountpoints management file for user {self.username}: {e}")
             
             # odstraníme certifikáty
             log.info(f"Deleting all certificates for user {self.username}.")
@@ -260,6 +322,9 @@ class sftpUserMng:
             log.info(f"Removing sshd configuration for user {self.username}.")
             remove_sshd_config(self.username)
             
+            # cleanup ssh souborů
+            self.__cleanupSSHFiles()
+                        
             # odstraníme skupiny
             log.info(f"Removing user {self.username} from all SFTP groups.")
             deleteUserFromGroup(self.username, None)            

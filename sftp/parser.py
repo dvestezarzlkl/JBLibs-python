@@ -130,7 +130,6 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
                         u.mountpointManager.ensure_mountpoint(mount_name, real_path)
             else:
                 log.info(f"No mountpoints to add for user {username}.")
-            smb.postEnsureAllMountpoints()
             
             # přidáme certifikáty
             log.info(f"Adding certificates for user {username}.")
@@ -184,6 +183,7 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
             log.error(f"Failed to create user from JSON data: {e}")
             log.exception(e)
     
+    smb.postEnsureAllMountpoints()
     # restart ssh je v hlavním volání    
     log.info(f"Finished processing JSON file {file}. Created/updated {len(ret)} users.")
     if len(ret) == 0:
@@ -276,6 +276,18 @@ def uninstallUser(username:str|sftpUserMng)->bool:
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
+    from .sambaPoint import smbHelp
+    __uninstallUser(username)
+    smbHelp.reloadSystemdDaemon()
+    return True
+
+def __uninstallUser(username:str|sftpUserMng)->bool:
+    """Odinstaluje zadaného sftpUserMng uživatele ze systému.
+    Args:
+        username (str): jméno uživatele k odinstalaci
+    Returns:
+        bool: True pokud se odinstalace podařila, jinak False
+    """
     log.info(f"Uninstalling SFTP user {username}.")
     try:
         if isinstance(username, str):
@@ -298,6 +310,8 @@ def uninstallAllUsers()->bool:
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
+    from .sambaPoint import smbHelp
+    
     log.info("Uninstalling all SFTP users.")
     try:
         users = listActiveUsers()
@@ -311,6 +325,8 @@ def uninstallAllUsers()->bool:
     
     success=True
     for u in users:
-        if not uninstallUser(u):
+        if not __uninstallUser(u):
             success=False
+            
+    smbHelp.reloadSystemdDaemon()
     return success

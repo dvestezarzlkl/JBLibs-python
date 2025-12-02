@@ -230,17 +230,19 @@ def ensureJail(username:str,testOnly:bool=False)->str|None:
         str: cesta k jail adresáři
         None: pokud při chybě
     """
-    log.info(f"Ensuring jail directory for user {username}")
+    if not testOnly:
+        log.info(f"Ensuring jail directory for user {username}")
     homeDir=jhlp.getUserHome(username)
     if homeDir is None:
-        log.error(f" < Cannot determine home directory for user {username}.")
+        if not testOnly:
+            log.error(f" < Cannot determine home directory for user {username}.")
         return None
             
     jail_dir = os.path.join(homeDir, "__sftp__")
     try:
         if not os.path.exists(jail_dir):
             if testOnly:
-                log.info(f" - Jail directory {jail_dir} does not exist for user {username}, but testOnly is True. Not creating it.")
+                # log.info(f" - Jail directory {jail_dir} does not exist for user {username}, but testOnly is True. Not creating it.")
                 return None
             log.info(f" - Jail directory {jail_dir} does not exist for user {username}. Creating it.")
             os.makedirs(jail_dir, exist_ok=True)

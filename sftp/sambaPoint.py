@@ -25,6 +25,8 @@ __INIT_LOCK__=threading.Lock()
 class smbHelp:    
     toMount:list[str] = []
     requireSambaRestart:bool = False
+    toRemove:list[str] = []
+    """Fullpath seznam mount pointů, které je potřeba odebrat při odebrání mountpointů"""
 
     @staticmethod
     def ensureSambaCredFile():
@@ -588,18 +590,8 @@ def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
     log.info(f" - Removing Samba SFTP mount point configuration for share {share_base_name}.")
     smbHelp.removeSambaSharePoint(share_base_name, for_user)
         
-    # odstranění mountpointu
-    if os.path.isdir(mp.mountPath):
-        log.info(f" - Removing Samba SFTP mount point directory {mp.mountPath}.")
-        try:
-            os.rmdir(mp.mountPath)
-        except Exception as e:
-            msg=f"Failed to remove Samba SFTP mount point directory {mp.mountPath}: {e}"
-            log.error(msg)
-            log.exception(e)
-            raise RuntimeError(msg)
-        
-    smbHelp.reloadSystemdDaemon()
+    smbHelp.requireSambaRestart = True
+    smbHelp.toRemove.append(mp.mountPath)        
     log.info(f"< Samba SFTP mount point for share {share_base_name} removed successfully.")
     
   
@@ -623,7 +615,7 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
         source=mp.realPath
         target=mp.mountPath        
         log.info(f"Ensuring Samba SFTP mount point configuration for share {base_share_name}.")
-        initEnsureSamba()        
+        initEnsureSamba()
         # získáme informace username a groupname z realpath
         forceUser, uid = mp.forUser()
         forceGrp, gid = mp.forGroup()        
@@ -684,6 +676,7 @@ def postEnsureAllMountpoints()->None:
             log.error(" < Failed to restart Samba service during post-processing of mount points.")
         else:
             log.info("Samba service restarted successfully during post-processing of mount points.")
+        smbHelp.requireSambaRestart = False
     else:
         log.info("Post-processing: No Samba service restart required.")
             
@@ -706,5 +699,44 @@ def postEnsureAllMountpoints()->None:
                 log.info(f"Samba SFTP mount point {mnt} mounted successfully during post-processing.")
             except subprocess.CalledProcessError as e:
                 log.error(f" < Failed to mount Samba SFTP mount point {mnt} during post-processing: {e}")
+        smbHelp.toMount.clear()
     else:
         log.info("Post-processing: No Samba SFTP mount points to mount.")
+        
+def postRemoveAllMountpoints()->None:
+    """Provede potřebné akce po odebrání všech mount pointů.    
+    Jen restartuje sambu pokud je potřeba, protože umount musí být proveden před odstraněním smaba pointů.
+    
+    POZOR: je potřeba zavolat smbHelp.reloadSystemdDaemon() na konci všech remove, pokud by jsme dali sem
+    tak u každého uživatele bude reloadovat a někdy to trvá i několik minut
+    
+    Takže se v kódu provede umount, odstraní se fstab a samba konfigurace a pak se zavolá tato funkce.
+    
+    """
+    if smbHelp.requireSambaRestart:
+        log.info("Post-processing: Restarting Samba service as required after mount point removals.")
+        if not restartSambaService():
+            log.error(" < Failed to restart Samba service during post-processing of mount point removals.")
+        else:
+            log.info("Samba service restarted successfully during post-processing of mount point removals.")            
+        smbHelp.requireSambaRestart = False
+    else:
+        log.info("Post-processing: No Samba service restart required after mount point removals.")
+        
+    log.info(f"Remove MountPonits: Clearing mount point removal list  - count: {len(smbHelp.toRemove)}")
+    try:
+        for mnt in smbHelp.toRemove:
+            if os.path.isdir(mnt):
+                log.info(f"Post-processing: Removing mount point directory {mnt}.")
+                try:
+                    os.rmdir(mnt)
+                    log.info(f"Mount point directory {mnt} removed successfully during post-processing.")
+                except Exception as e:
+                    log.error(f" < Failed to remove mount point directory {mnt} during post-processing: {e}")
+    except Exception as e:
+        log.error(f" < Exception during post-processing of mount point removals: {e}")
+        log.exception(e)
+        
+    smbHelp.toRemove.clear()
+        
+    log.info("Post-processing of mount point removals completed.")
