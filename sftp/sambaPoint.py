@@ -169,7 +169,15 @@ class smbHelp:
 
 
     @staticmethod    
-    def ensureSambaSharePoint(target:str, for_user:str, share_base_name:str, forceUser:str, forceGrp:str)->None:
+    def ensureSambaSharePoint(
+        target:str,
+        for_user:str,
+        share_base_name:str,
+        forceUser:str,
+        forceGrp:str,
+        rw:bool=True,
+        my:bool=False
+    )->None:
         """Přidá nový mount point do Samba konfigurace.
         Args:
             target (str): cesta k adresáři, který se má namountovat
@@ -178,6 +186,8 @@ class smbHelp:
             share_base_name (str): základní jméno share (bude doplněno o prefix "sftp_mount_" )
             forceUser (str): uživatel, pod kterým bude mount point přístupný
             forceGrp (str): skupina, pod kterou bude mount point přístupný
+            rw (bool): pokud True, mount point bude read-write, jinak readonly
+            my (bool): pokud True, mount point bude vlastněn uživatelem `forceUser`, jinak root
         Raises:
             RuntimeError: pokud dojde k chybě při přidávání mount pointu
         """
@@ -211,6 +221,15 @@ class smbHelp:
         log.info(f" - target: {target}")
         log.info(f" - force user: {forceUser}")
         log.info(f" - force group: {forceGrp}")
+
+        ro="no"
+        if not rw:
+            log.info(" - mountpoint will be read-only")
+            ro="yes"        
+        
+        if my:
+            log.info(" - mountpoint will be owned by the force user")
+            # forceUser=for_user
         
         share_cfg=f"""
     path = {target}
@@ -219,7 +238,7 @@ class smbHelp:
     force group = {forceGrp}
     browsable = yes
     writable = yes
-    read only = no
+    read only = {ro}
     create mask = 0770
     directory mask = 0770
     """
@@ -559,7 +578,6 @@ def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
         RuntimeError: pokud dojde k chybě při odebírání mount pointu
     """
     share_base_name=mp.mountName
-    restart_sshd()
     
     log.info(f"Removing Samba SFTP mount point for share {share_base_name}.")
     cifs_path=smbHelp.getCIFSpath(share_base_name, for_user)
@@ -639,7 +657,15 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
                 
         log.info(f" - Ensuring Samba SFTP mount point for share {base_share_name} at target {source}.")
         # vytvoří sourcePath  > //localhost/sftp_mount_user_sharename
-        smbHelp.ensureSambaSharePoint(source, for_user, base_share_name, forceUser, forceGrp)
+        smbHelp.ensureSambaSharePoint(
+            source,
+            for_user,
+            base_share_name,
+            forceUser,
+            forceGrp,
+            rw=mp.rw,
+            my=mp.my
+        )
         smbHelp.requireSambaRestart = True
         
         log.info(f" - Ensuring fstab CIFS config for Samba SFTP mount point {base_share_name}.")
