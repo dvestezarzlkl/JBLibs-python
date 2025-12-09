@@ -377,7 +377,8 @@ def select(
     POZOR, protože využívá menu, tak maže obrazovku
     
     Parameters:
-        msg (str): zpráva která se zobrazí nad seznamem položek
+        msg (str|None): zpráva která se zobrazí nad seznamem položek  
+            pokud je None, tak se nezobrazí žádná zpráva
         items (list[select_item]): seznam položek, striktně se očekává že každá položka bude:  
             - class select_item
             - None - pro oddělovač
