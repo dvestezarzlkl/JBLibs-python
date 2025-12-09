@@ -304,6 +304,7 @@ class c_menu_block_items:
                 - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje
                 - `list` = stejně jako tuple
                 - ostatní hodnoty vyvolají chybu nebo vrátí prázdný tuple viz boolNoError
+                - POZOR pokud je None tak se v menu přeskočí - prázdný řádkek
             boolNoError (bool): default(False) pokud je True, tak nevyvolává chybu, ale vrátí prázdný tuple
             
         Returns:
@@ -335,8 +336,11 @@ class c_menu_block_items:
         Parameters:
             item (Union[str,Tuple[str,str]]): položka k přidání, může být:
                 - `str`, tak se použije (val,'')
-                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje
-                
+                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje  
+                    - pokud je val[1]=='c' tak se val[0] vycentruje (přidají se mezery okolo)
+                - `list` = stejně jako tuple
+                - None = prázdný řádek
+                - ostatní hodnoty vyvolají chybu
         Returns:
             c_menu_block_items: vrátí instanci třídy
         """
@@ -348,7 +352,9 @@ class c_menu_block_items:
         Parameters:
             items (Union[str,'c_menu_block_items',List[Union[str,Tuple[str,str]]]): položky k přidání, může být:
                 - `str`, tak se použije (val,'')
-                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje
+                - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1),
+                    - pokud je len nula tak se ignoruje
+                    - pokud je val[1]=='c' tak se val[0] vycentruje (přidají se mezery okolo)
                 - `list` = stejně jako tuple
                 - `c_menu_block_items` = jiný objekt c_menu_block_items, jeho obsah se přidá k tomuto objektu
                 
@@ -687,12 +693,20 @@ class c_menu:
             
             i_l=[""] if not x1 else x1
             i_r=[""] if not x2 else x2
+            center = (item[1] or "").strip().lower() == "c"
             
-            # dorovnej délky polí
-            if len(i_l) > len(i_r):
-                i_r.extend([""] * (len(i_l) - len(i_r)))
-            elif len(i_r) > len(i_l):
-                i_l.extend([""] * (len(i_r) - len(i_l)))
+            if center:
+                # pokud je požadováno centrování, tak nastavíme pravý text na prázdný a provedeme centrování
+                max_len = max(len(line) for line in i_l)
+                max_len = max(max_len, minWidth)
+                i_l = [ line.center(max_len) for line in i_l ]
+                i_r = [''] * len(i_l)
+            else:
+                # dorovnej délky polí
+                if len(i_l) > len(i_r):
+                    i_r.extend([""] * (len(i_l) - len(i_r)))
+                elif len(i_r) > len(i_l):
+                    i_l.extend([""] * (len(i_r) - len(i_l)))
                 
             # zpracujeme přídavky            
             #   prefix
