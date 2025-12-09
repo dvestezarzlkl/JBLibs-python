@@ -3,7 +3,7 @@ from __future__ import annotations
 import bcrypt
 from .lng.default import * 
 from .helper import loadLng
-from .term import restoreAndClearDown,savePos,getKey,cls
+from .term import restoreAndClearDown,savePos,getKey,cls,reset
 loadLng()
 
 import re, getpass
@@ -468,4 +468,5 @@ def select(
         
     m=c_menu(menuItems,minMessageWidth,True,False,title,subTitle)
     m.run()
+    reset()
     return selectReturn(m.getLastSelItem(),m.getCalcWidth())
