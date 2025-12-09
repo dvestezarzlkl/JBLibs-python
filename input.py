@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import bcrypt
 from .lng.default import * 
 from .helper import loadLng
@@ -8,6 +10,10 @@ import re, getpass
 from .c_menu import printBlock
 from typing import Union,Callable
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .c_menu import c_menu_block_items
+    
 confirm_choices: list[tuple[str, str]] = [
     ['y', TXT_INPUT_YES],
     ['n', TXT_INPUT_NO],
@@ -331,7 +337,7 @@ class select_item:
     """Zobrazený popisek položky"""
     
     choice: str = ""
-    """sekvence k vyprání, max 8 znaků  
+    """sekvence k vybrání, max 8 znaků  
     pokud nezadáme, tzn necháme "", tak se k položce vygeneruje číselné choice
     """
     
@@ -360,16 +366,27 @@ class selectReturn:
         self.item=item
         self.calcWidth=calcWidth
 
-def select(msg: str, items: list[select_item], minMessageWidth:int=0) ->selectReturn:
+def select(
+    msg: str,
+    items: list[select_item],
+    minMessageWidth:int=0,
+    title:Union[str,c_menu_block_items]=TXT_SELECT_TITLE,
+    subTitle:Union[str,"c_menu_block_items"]="",
+) ->selectReturn:
     """Zobrazí seznam položek a čeká na výběr jedné z nich  
     POZOR, protože využívá menu, tak maže obrazovku
     
     Parameters:
         msg (str): zpráva která se zobrazí nad seznamem položek
-        items (list[select_item]): seznam položek, striktně se očekává že každá položka bude class select_item
+        items (list[select_item]): seznam položek, striktně se očekává že každá položka bude:  
+            - class select_item
+            - None - pro oddělovač
+            - class c_menu_title_label - vytváří se centrovaný text bez výběru
         make_cls (bool): pokud je True, tak se před zobrazením smaže obrazovka
         minMessageWidth (int): minimální šířka zprávy
-        
+        title (Union[str,"c_menu_block_items"]): titulek menu, může být i c_menu_block_items pro víceřádkový titulek
+        subTitle (Union[str,"c_menu_block_items"]): podtitulek menu, může být i c_menu_block_items pro víceřádkový podtitulek
+                
     Returns:
         Union[select_item,None]: vybraná položka nebo None pokud uživatel zrušil výběr
         
@@ -383,31 +400,72 @@ def select(msg: str, items: list[select_item], minMessageWidth:int=0) ->selectRe
             select_item("Druhý","dru",data="druhý výběr"),
         ],80)
         print(x.item.data if x.item else "ESC, nebylo nic vybráno")
+        
+        # nebo
+        x.item.choice obsahuje vybranou klávesovou sekvenci
+        x.item.data je None nebo data spojená s položkou, ale musí být zadána při vytváření položky tzn
+            select_item("Druhý","dru",data="druhý výběr"),
+            select_item("Druhý","dru",data=15),
+            select_item("Druhý","dru",data={"klic":"hodnota"}), atd.
         ```
     """
-    from .c_menu import c_menu,c_menu_item,onSelReturn
+    from .c_menu import c_menu,c_menu_item,onSelReturn,c_menu_block_items,c_menu_title_label
+    
+    if not isinstance(items, list):
+        raise ValueError("Parameter items must be list of select_item")
+    if len(items) == 0:
+        raise ValueError("Parameter items must contain at least one select_item")
+    # for i in range(len(items)):
+    #     if not items[i] is None and not isinstance(items[i], (select_item,c_menu_title_label)):
+    #         raise ValueError(f"Item at index {i} is not instance of select_item")
+    
+    if not isinstance(title, (str, c_menu_block_items)):
+        raise ValueError("Parameter title must be str or list[c_menu_block_items]")
+    
+    if isinstance(subTitle, str) and subTitle:
+        subTitle= c_menu_block_items([subTitle])
+    elif not subTitle:
+        subTitle=c_menu_block_items()
+    if not isinstance(subTitle, c_menu_block_items):
+        raise ValueError("Parameter subTitle must be str or list[c_menu_block_items]")
+    
+    if not isinstance(msg, str) and msg:
+        raise ValueError("Parameter msg must be str")
+    subTitle.append(msg)
     
     if not minMessageWidth:
         minMessageWidth=_minMessageWidth    
     
     cnt=0
+    menuItems = []
     for i in range(len(items)):
-        if not isinstance(items[i], select_item):
-            raise ValueError(f"Item at index {i} is not instance of select_item")
-        if not isinstance(items[i].choice, str):
-            items[i].choice = ""
-        else:
-            items[i].choice = items[i].choice.strip()
+        if isinstance(items[i], select_item):
+            if not isinstance(items[i].choice, str):
+                items[i].choice = ""
+            else:            
+                items[i].choice = items[i].choice.strip()
             # max 8 znaků
             if len(items[i].choice) > 8:
                 items[i].choice = items[i].choice[:8]
-        if not items[i].choice:
-            items[i].choice = str(cnt+1)
-            cnt+=1
-        if not isinstance(items[i].label, str):
-            raise ValueError(f"Item at index {i} has not label")
-    menuItems=[ c_menu_item(i.label,i.choice,lambda f: onSelReturn(endMenu=True),data=i.data) for i in items]
-    
-    m=c_menu(menuItems,minMessageWidth,True,False,TXT_SELECT_TITLE,msg)
+                
+            if not items[i].choice:
+                items[i].choice = str(cnt+1)
+                cnt+=1
+            if not isinstance(items[i].label, str):
+                raise ValueError(f"Item at index {i} has not label")
+            menuItems.append( c_menu_item(
+                items[i].label,
+                items[i].choice,
+                lambda f: onSelReturn(endMenu=True),
+                data=items[i].data
+            ))
+        elif items[i] is None:
+            menuItems.append( None )
+        elif isinstance(items[i], c_menu_title_label):
+            menuItems.append( items[i] )
+        else:
+            raise ValueError(f"Item at index {i} is not instance of select_item")
+        
+    m=c_menu(menuItems,minMessageWidth,True,False,title,subTitle)
     m.run()
     return selectReturn(m.getLastSelItem(),m.getCalcWidth())
