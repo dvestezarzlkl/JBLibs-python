@@ -503,7 +503,7 @@ class c_menu:
 
     def __init__(
         self,
-        menu: list[c_menu_item] = [],
+        menu: list[c_menu_item,None,c_menu_title_label] = [],
         minMenuWidth:int=0,
         esc_is_quit:bool=None, # pokud None tak se použije self.ESC_is_quit
         quitEnable:bool=True,
@@ -524,7 +524,9 @@ class c_menu:
         if not isinstance(menu, (list, tuple)):
             raise ValueError(TXT_CMENU_ERR06)
         for i in range(len(menu)):
-            if not isinstance(menu[i], c_menu_item):
+            if menu[i] is None:
+                continue
+            if not isinstance(menu[i], (c_menu_item,c_menu_title_label)):
                 raise ValueError(TXT_CMENU_ERR07)
         self.menu = menu
         
