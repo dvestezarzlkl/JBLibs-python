@@ -367,7 +367,7 @@ class selectReturn:
         self.calcWidth=calcWidth
 
 def select(
-    msg: str,
+    msg: Union[str|None],
     items: list[select_item],
     minMessageWidth:int=0,
     title:Union[str,c_menu_block_items]=TXT_SELECT_TITLE,
