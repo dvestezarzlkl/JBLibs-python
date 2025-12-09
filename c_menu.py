@@ -339,11 +339,13 @@ class c_menu_block_items:
                 - `tuple`, tak se použije (val[0],val[1] nebo '' pokud je len 1), pokud je len nula tak se ignoruje  
                     - pokud je val[1]=='c' tak se val[0] vycentruje (přidají se mezery okolo)
                 - `list` = stejně jako tuple
-                - None = prázdný řádek
+                - None = Přeskočí se, vynechá se
                 - ostatní hodnoty vyvolají chybu
         Returns:
             c_menu_block_items: vrátí instanci třídy
         """
+        if item is None:
+            return self
         self._l.append(self._sanitizeItem(item))
         
     def extend(self,items:Union[str,'c_menu_block_items',List[Union[str,Tuple[str,str]]]]) -> 'c_menu_block_items':
