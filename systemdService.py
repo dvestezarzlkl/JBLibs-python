@@ -83,7 +83,7 @@ class strTime:
 
         if not fromTx:
             return None
-        fromTx = fromTx.strip()
+        fromTx = str(fromTx).strip()
         if not fromTx:
             return None
         # text rozdělíme, vstup může být '100ms', '1m 30sec'
@@ -368,7 +368,52 @@ class c_unit_status:
 
    
 class c_service_status(c_unit_status):
-    """Status systemd služby (service unit)."""
+    """Status systemd služby (service unit).
+    autoload, anotace nutné
+    """
+
+    Id: str = ""
+    MainPID: int = 0
+    ExecMainPID : int = 0
+    RestartUSec: strTime = 0
+    TimeoutStartUSec: strTime = 0
+    TimeoutStopUSec: strTime = 0
+    TimeoutAbortUSec: strTime = 0
+    UID: int = 0
+    User: str = ""
+    GID: int = 0
+    Group: str = ""
+    
+    ActiveEnterTimestamp:Union[datetime,None]=None
+    Uptime:strTime=0
+    
+    ExecStart: str = ""
+    ExecStartEx: str = ""
+    
+    MemoryCurrent: bytes = 0
+    MemoryAvailable: bytes = 0 # 0=infinity
+    CPUUsageNSec: strTimeUSec = 0
+    """ Využití CPU v mikrosekundách od spuštění služby, v infu je číslo v nanosekundách, ale toto je převedeno na mikrosekundy
+    pro potřeby tohoto objektu
+    """
+    
+    TasksCurrent: int = 0
+    
+    IOReadBytes: io_bytes = 0
+    IOReadOperations: io_bytes = 0
+    IOWriteBytes: io_bytes = 0
+    IOWriteOperations: io_bytes = 0
+    
+    WorkingDirectory: str = ""
+    RootDirectory: str = ""
+    
+    Nice: int = 0
+    """ priority, 0=normální, -20=nejvyšší, 19=nejnižší"""
+    
+    FragmentPath: str = ""
+    
+    StartLimitIntervalUSec: int = 0
+    """ v sec """
 
     def __init__(self):
         super().__init__()
@@ -378,10 +423,10 @@ class c_service_status(c_unit_status):
         self.MainPID: int = 0
         self.ExecMainPID: int = 0
 
-        self.RestartUSec: strTime = strTime(0)
-        self.TimeoutStartUSec: strTime = strTime(0)
-        self.TimeoutStopUSec: strTime = strTime(0)
-        self.TimeoutAbortUSec: strTime = strTime(0)
+        self.RestartUSec: strTime = 0
+        self.TimeoutStartUSec: strTime = 0
+        self.TimeoutStopUSec: strTime =  0
+        self.TimeoutAbortUSec: strTime = 0
 
         self.UID: int = 0
         self.User: str = ""
@@ -389,7 +434,7 @@ class c_service_status(c_unit_status):
         self.Group: str = ""
 
         self.ActiveEnterTimestamp: datetime | None = None
-        self.Uptime: strTime = strTime(0)
+        self.Uptime: strTime = 0
 
         self.ExecStart: str = ""
         self.ExecStartEx: str = ""
@@ -397,17 +442,17 @@ class c_service_status(c_unit_status):
         self.MemoryCurrent: bytes = 0
         self.MemoryAvailable: bytes = 0  # 0 = unlimited
 
-        self.CPUUsageNSec: strTimeUSec = strTimeUSec(0)
+        self.CPUUsageNSec: strTimeUSec = 0
         """ Využití CPU v mikrosekundách od spuštění služby, v infu je číslo v nanosekundách, ale toto je převedeno na mikrosekundy
         pro potřeby tohoto objektu
         """
         
         self.TasksCurrent: int = 0
 
-        self.IOReadBytes: io_bytes = io_bytes(0)
-        self.IOReadOperations: io_bytes = io_bytes(0)
-        self.IOWriteBytes: io_bytes = io_bytes(0)
-        self.IOWriteOperations: io_bytes = io_bytes(0)
+        self.IOReadBytes: io_bytes = 0
+        self.IOReadOperations: io_bytes = 0
+        self.IOWriteBytes: io_bytes = 0
+        self.IOWriteOperations: io_bytes = 0
 
         self.WorkingDirectory: str = ""
         self.RootDirectory: str = ""
