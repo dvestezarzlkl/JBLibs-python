@@ -19,6 +19,31 @@ _bracket_pairs = {"(": ")", "[": "]", "{": "}", "<": ">","/":"/","\\":"\\","|":"
 
 """
 Základní menu pro konzolové aplikace, založené na psané volbě klávesou od jednoho znaku
+
+klávesy k registraci např:
+    - '\x1b[2~' = Insert
+    - '\x1b[3~' = Delete
+    - '\x1b[5~' = Page Up
+    - '\x1b[6~' = Page Down
+    - '\x1b[H'  = Home
+    - '\x1b[F'  = End
+    - '\x1b[C'  = šipka vpravo
+    - '\x1b[D'  = šipka vlevo
+    
+    Funkční klávesy:
+    - '\x1bOP'  = F1
+    - '\x1bOQ'  = F2
+    - '\x1bOR'  = F3
+    - '\x1bOS'  = F4
+    - '\x1b[15~' = F5
+    - '\x1b[17~' = F6
+    - '\x1b[18~' = F7
+    - '\x1b[19~' = F8
+    - '\x1b[20~' = F9
+    - '\x1b[21~' = F10
+    - '\x1b[23~' = F11
+    - '\x1b[24~' = F12
+
 """
 
 class onSelReturn:
@@ -522,6 +547,10 @@ class c_menu:
     
     _selectedItem: c_menu_item = None
 
+    __regKeys:dict={}
+    """ registrované klávesy pro menu, klíč je string klávesy, hodnota je funkce bez parametrů, 
+    která se má spustit při stisku této klávesy"""
+
     def __init__(
         self,
         menu: list[c_menu_item,None,c_menu_title_label] = [],
@@ -541,6 +570,9 @@ class c_menu:
         Raises:
             ValueError: pokud není menu list nebo obsahuje jiné typy než c_menu_item            
         """
+        self.__regKeys=self.__regKeys
+        if not isinstance(self.__regKeys,dict):
+            self.__regKeys={}
         
         # kontrola items
         if not isinstance(menu, (list, tuple)):
@@ -632,6 +664,52 @@ class c_menu:
                 item.choice = str(item.choice)
         
         return ret
+    
+    def keyBind(self, key:str, func:Callable[[],None]):
+        """Přidá registrovanou klávesu pro menu, která spustí funkci bez parametrů
+        
+        Parameters:
+            key (str): klávesa pro spuštění funkce
+            func (Callable[[c_menu_item], onSelReturn|None]): funkce s parametrem aktuálně vybraného itemu c_menu_item  
+                - funkce by měla pocházet z tohoto objektu aby měla přístup k jeho property
+                - funkce vrací
+                    - None pokud chceme zůstat v menu
+                    - nebo onSelReturn pro řízení menu jako exit apod.
+                - Pokud chceme po návratu refreshnout menu pomocí onShowMenu, tak musíme 
+                    nastavit self.menuRecycle=True v této funkci před návratem            
+        Raises:
+            ValueError: pokud je formát klávesy nebo funkce neplatný
+        """
+        if not isinstance(key,str) or not key:
+            raise ValueError(TXT_CMENU_REG_KEY_ERR04)
+        if not callable(func):
+            raise ValueError(TXT_CMENU_REG_KEY_ERR05)
+        
+        if key in self.__regKeys:
+            log.warning(TXT_CMENU_REG_KEY_ERR01.format(key=key))
+        
+        if key in [item.choice for item in self.__getList() if item]:
+            log.warning(TXT_CMENU_REG_KEY_ERR03.format(key=key))
+        if key in ['','\n','\r','\t','\b','\x1b[A','\x1b[B','\x1b[15~','\x7f']:
+            log.warning(TXT_CMENU_REG_KEY_ERR03.format(key=key))
+        
+        
+        self.__regKeys[key]=func
+    
+    def keyUnbind(self, key:str):
+        """Odebere registrovanou klávesu pro menu
+        
+        Parameters:
+            key (str): klávesa pro odebrání
+            
+        Raises:
+            ValueError: pokud je formát klávesy neplatný
+        """
+        if not isinstance(key,str) or not key:
+            raise ValueError(TXT_CMENU_REG_KEY_ERR02.format(key=key))
+        
+        if key in self.__regKeys:
+            del self.__regKeys[key]
     
     @staticmethod
     def sanitizeToStr(val)->str:
@@ -1305,7 +1383,8 @@ class c_menu:
                 ## pokud backspace tak vymažeme poslední znak
                 c=c[:-1]
                 continue # čekej na další klávesu
-            elif xc in ['\x1b[A','\x1b[B','\x1b[C','\x1b[D']:
+            #elif xc in ['\x1b[A','\x1b[B','\x1b[C','\x1b[D']:
+            elif xc in ['\x1b[A','\x1b[B']:
                 # detekovány klávesy šipek, tak zpracuj
                 if xc == '\x1b[A':
                     self.nextItem(False)
@@ -1315,6 +1394,32 @@ class c_menu:
             elif xk in ['\t',' ']:
                 # zakázané znaky
                 continue
+            # projdeme regKey mapu
+            elif xc in self.__regKeys:
+                fn=self.__regKeys[xc]
+                try:
+                    if callable(fn):
+                        log.debug(f"regKeyMap '{xk}' called")
+                        e=fn(self._selectedItem)
+                        if isinstance(e,onSelReturn):
+                            self.lastReturn=e
+                        first=True # po návratu je to vpodstatě také první načtení menu
+                        if e is None:
+                            continue # čekej na další klávesu
+                        
+                        if e.endMenu:
+                            e=self.callExitMenu(item)
+                            if isinstance(e,str):
+                                return e
+                            if not x  is False:
+                                return
+                            
+                    else:
+                        log.warning(f"regKeyMap '{xk}' is not callable")
+                except Exception as e:
+                    self.lastReturn = onSelReturn(err=f'Exception:\n'+traceback.format_exc())
+                    log.error(f" Exception on regKeyMap '{xk}'",exc_info=True)
+                continue # čekej na další klávesu
             
             if not xk in ['\r','\n']:
                 # pokud není RETURN tak přidej znak a vymaž old položku 
