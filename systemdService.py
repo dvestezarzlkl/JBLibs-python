@@ -20,6 +20,13 @@ class c_unitsRetRow:
     description: str = ""
     
     def __init__(self,row:str=None):
+        # legacy like init
+        self.unit = self.unit
+        self.load = self.load
+        self.active = self.active
+        self.sub = self.sub
+        self.description = self.description
+        
         if not row:
             return
         r=row.split(None,5)
@@ -35,6 +42,13 @@ class c_unitsFilesRetRow:
     vendor_preset: bool = False
     
     def __init__(self,row:str=None)->None:
+        # legacy like init
+        self.unit_file = self.unit_file
+        self.enabled_str = self.enabled_str
+        self.enabled = self.enabled
+        self.vendor_preset_str = self.vendor_preset_str
+        self.vendor_preset = self.vendor_preset
+        
         if not row:
             return        
         r=row.split(None,3)
@@ -46,7 +60,7 @@ class c_unitsFilesRetRow:
 class strTime:
     """ typ str time"""
     
-    _val:int=0
+    _val:int
     """ v uSec """
         
     def __init__(self, value: Union[str,int]):
@@ -55,6 +69,7 @@ class strTime:
         Args:
             value (Union[str,int]): textový čas ve formátu '1m 30sec' nebo číslo v mikrosekundách
         """
+        self._val=0
         if isinstance(value, int):
             self._val = value
         elif isinstance(value, str) and value.isdigit():
@@ -171,13 +186,12 @@ class strTime:
 class strTimeUSec(strTime):
     """ jako str time ale pokud inicializujeme s int tak to bere jako uSec
     """
-    def __init__(self, value: Union[str,int]):
+    def __init__(self, value: Union[str,int]):        
         if isinstance(value, int):
-            self._val = value / 1000
+            value = value / 1000            
         elif isinstance(value, str) and value.isdigit():
-            self._val = int(value) / 1000
-        else:
-            super().__init__(value)
+            value = int(value) / 1000
+        super().__init__(value)
             
 class bytesTx:
     """ reprezentuje velikost v bytech v textové podobě
@@ -190,11 +204,12 @@ class bytesTx:
         >>> print(b) # vytiskne '1kB'
         >>> b2 = bytesTx("1K")
     """
-    val: int = 0
-    precision: int = 2
+    val: int
+    precision: int
     
     def __init__(self, value: Union[str,int], precision: int = 2):
-        self.precision = precision        
+        self.precision = precision
+        self.val = 0
         if isinstance(value, int):
             self.val = value
         else:        
@@ -279,9 +294,11 @@ class bytes:
         >>> print(b)
         >>> b2 = bytes("1K")
     """
-    __val: int = 0
+    __val: int
     
     def __init__(self, value: Union[str,int]):
+        self.__val = 0
+        
         if isinstance(value, int):
             self.__val = value
         else:
@@ -306,10 +323,9 @@ class io_bytes(bytes):
             if value.isdigit():
                 value = int(value)        
         if value == 18446744073709551615:
-            self.__val = 0
-        else:
-            super().__init__(value)
-
+            value = 0
+            
+        super().__init__(value)
 
 class c_unit_status:
     """ slouží pro zobrazení výsledků z show - není zaměřeno na službu
@@ -335,50 +351,75 @@ class c_unit_status:
     """Určuje výchozí doporučené nastavení pro povolení nebo zakázání jednotky, jak je definováno ve preset souboru."""
     
     Uptime:strTime=strTime(0)
+    
+    def __init__(self) -> None:
+        self.Names = self.Names
+        self.LoadState = self.LoadState
+        self.ActiveState = self.ActiveState
+        self.SubState = self.SubState
+        self.CanStart = self.CanStart
+        self.CanStop = self.CanStop
+        self.CanReload = self.CanReload
+        self.CanIsolate = self.CanIsolate
+        self.CanFreeze = self.CanFreeze
+        self.UnitFileState = self.UnitFileState
+        self.UnitFilePreset = self.UnitFilePreset
+        self.Uptime = self.Uptime
 
+   
 class c_service_status(c_unit_status):
-    Id: str = ""
-    MainPID: int = 0
-    ExecMainPID : int = 0
-    RestartUSec: strTime = 0
-    TimeoutStartUSec: strTime = 0
-    TimeoutStopUSec: strTime = 0
-    TimeoutAbortUSec: strTime = 0
-    UID: int = 0
-    User: str = ""
-    GID: int = 0
-    Group: str = ""
+    """Status systemd služby (service unit)."""
+
+    def __init__(self):
+        super().__init__()
+
+        self.Id: str = ""
+
+        self.MainPID: int = 0
+        self.ExecMainPID: int = 0
+
+        self.RestartUSec: strTime = strTime(0)
+        self.TimeoutStartUSec: strTime = strTime(0)
+        self.TimeoutStopUSec: strTime = strTime(0)
+        self.TimeoutAbortUSec: strTime = strTime(0)
+
+        self.UID: int = 0
+        self.User: str = ""
+        self.GID: int = 0
+        self.Group: str = ""
+
+        self.ActiveEnterTimestamp: datetime | None = None
+        self.Uptime: strTime = strTime(0)
+
+        self.ExecStart: str = ""
+        self.ExecStartEx: str = ""
+
+        self.MemoryCurrent: bytes = 0
+        self.MemoryAvailable: bytes = 0  # 0 = unlimited
+
+        self.CPUUsageNSec: strTimeUSec = strTimeUSec(0)
+        """ Využití CPU v mikrosekundách od spuštění služby, v infu je číslo v nanosekundách, ale toto je převedeno na mikrosekundy
+        pro potřeby tohoto objektu
+        """
+        
+        self.TasksCurrent: int = 0
+
+        self.IOReadBytes: io_bytes = io_bytes(0)
+        self.IOReadOperations: io_bytes = io_bytes(0)
+        self.IOWriteBytes: io_bytes = io_bytes(0)
+        self.IOWriteOperations: io_bytes = io_bytes(0)
+
+        self.WorkingDirectory: str = ""
+        self.RootDirectory: str = ""
+
+        self.Nice: int = 0
+        """ priority, 0=normální, -20=nejvyšší, 19=nejnižší"""
+
+        self.FragmentPath: str = ""
+
+        self.StartLimitIntervalUSec: int = 0
+        """Interval pro restart limitaci (v usec)."""
     
-    ActiveEnterTimestamp:Union[datetime,None]=None
-    Uptime:strTime=0
-    
-    ExecStart: str = ""
-    ExecStartEx: str = ""
-    
-    MemoryCurrent: bytes = 0
-    MemoryAvailable: bytes = 0 # 0=infinity
-    CPUUsageNSec: strTimeUSec = 0
-    """ Využití CPU v mikrosekundách od spuštění služby, v infu je číslo v nanosekundách, ale toto je převedeno na mikrosekundy
-    pro potřeby tohoto objektu
-    """
-    
-    TasksCurrent: int = 0
-    
-    IOReadBytes: io_bytes = 0
-    IOReadOperations: io_bytes = 0
-    IOWriteBytes: io_bytes = 0
-    IOWriteOperations: io_bytes = 0
-    
-    WorkingDirectory: str = ""
-    RootDirectory: str = ""
-    
-    Nice: int = 0
-    """ priority, 0=normální, -20=nejvyšší, 19=nejnižší"""
-    
-    FragmentPath: str = ""
-    
-    StartLimitIntervalUSec: int = 0
-    """ v sec """
     
 class c_timer_status(c_unit_status):    
     NextElapseUSecRealtime: datetime = 0
@@ -387,7 +428,15 @@ class c_timer_status(c_unit_status):
     AccuracyUSec: strTime = 0
     RandomizedDelayUSec: strTime = 0
     
-    Triggers: str = "" 
+    Triggers: str = ""
+    
+    def __init__(self):
+        super().__init__()
+        self.NextElapseUSecRealtime = self.NextElapseUSecRealtime
+        self.LastTriggerUSec = self.LastTriggerUSec
+        self.AccuracyUSec = self.AccuracyUSec
+        self.RandomizedDelayUSec = self.RandomizedDelayUSec
+        self.Triggers = self.Triggers
   
 
 def convert_value(value: str, target_type, doNotConvertNone:bool=False):
@@ -437,15 +486,15 @@ def convert_value(value: str, target_type, doNotConvertNone:bool=False):
             return None
 
 class c_header:
-    unitName:str=None # nodered@.service
+    unitName:str # nodered@.service
     """Pokud none tak se použije text z create jako název"""
-    version:str="1.0.0"
-    date:str= None
+    version:str
+    date:str
     """Pokud nenastavíme tak obsahuje aktuální"""
-    author:str=None
+    author:str
     """Pokud nenastavíme tak se vyvolá výjimka při getStr()"""
     
-    def __init__(self,unitName:str=None,version:str="0.0.0",date:str=None,author:str=None):
+    def __init__(self,unitName:str=None,version:str="1.0.0",date:str=None,author:str=None):
         self.unitName=unitName
         self.version=version
         self.date=date
@@ -518,23 +567,23 @@ class c_header:
         return r
 
 class c_unit:
-    noneInstance: bool = False
-    name: str = ""
+    noneInstance: bool
+    name: str
     """pokud se nejedná o šablonu obsahuje stejný text jako ve fullName  
     Pokud se jedná o šablonovací servis tak obsahuje jen název šablony a typ tzn 'serviceName@.service' bez názvu template
     """
-    fullName: str = ""
+    fullName: str
     """plný název služby včetně přípony a šablony tzn 'serviceName@tempalteName.service'  
     pokud se nejedná o šablonovací servis tak obsahuje stejný text jako je v name
     """
-    ok: bool = False
+    ok: bool
     
-    _isTimer:bool=False
-    _postfix:str=""
+    _isTimer:bool
+    _postfix:str
     """přípona pro službu nebo timer tzn '.service' nebo '.timer'"""
-    _templateName=None
+    _templateName:str|None
     """kopie parametru z konstruktoru"""
-    _serviceName=None
+    _serviceName:str|None
     """kopie parametru z konstruktoru"""
 
     def __init__(self, service_name: str, templateName:str=None, isTimer: bool = False):
@@ -549,6 +598,10 @@ class c_unit:
                 - 'název' = pracujeme s konkrétní službou, která je odvozena od šablony
             isTimer (bool): Pokud je `True`, jedná se o timer, jinak o službu.            
         """
+        self._isTimer = False
+        self._postfix = ""
+        self._templateName = None
+        self._serviceName = None
         
         if not haveSystemd():
             raise ValueError(TXT_C_UNIT_noSystemd)
@@ -1144,7 +1197,7 @@ class c_service(c_unit):
         return None
     
 class c_timer(c_unit):
-    service : c_service = None
+    service : c_service|None
     
     def __init__(self, service_name: str, templateName:str=None, checkService:bool=True):
         """
@@ -1158,6 +1211,7 @@ class c_timer(c_unit):
                 - 'název' = pracujeme s konkrétní službou, která je odvozena od šablony
             checkService (bool): Pokud je `True`, zkontroluje existenci služby a při úspěchu ji načte.
         """                        
+        self.service = None
         super().__init__(service_name, templateName, True)
         
         if checkService:
