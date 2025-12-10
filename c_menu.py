@@ -22,16 +22,16 @@ Základní menu pro konzolové aplikace, založené na psané volbě klávesou o
 """
 
 class onSelReturn:
-    err: str = ""
+    err: str
     """ Pokud nastavíme tak chybová hláška, která se zobrazí po skončení funkce onSelect """
 
-    ok: str = ""
+    ok: str
     """ Pokud nastavíme, zobrazí se pod menu jako informativní hláška """
 
-    data: Any = None
+    data: Any
     """ Data, která se předají do funkce onAfterSelect """
 
-    endMenu: bool = False
+    endMenu: bool
     """ Pokud je True, tak se menu ukončí """
     
     def __init__(self, err: str = "", ok: str = "", data: Any = None, endMenu: bool = False):
@@ -51,13 +51,13 @@ class onSelReturn:
 class c_menu_item:
     """ Třída reprezentující jednu položku menu """
 
-    choice: str = ""
+    choice: str
     """ Klávesová zkratka pro tuto položku menu, například "s" """
 
-    data: Any = None
+    data: Any
     """ Data, která se předají do funkce onSelect """
 
-    onSelect: Callable[["c_menu_item"],onSelReturn] = None
+    onSelect: Callable[["c_menu_item"],onSelReturn]
     """ Funkce, která se zavolá po stisknutí klávesy pro tuto položku menu,
     návratová hodnota z funkce je předána do funkce onAfterSelect
     
@@ -68,7 +68,7 @@ class c_menu_item:
         onSelReturn: výstupní hodnota
     """
 
-    onAfterSelect: Callable[[onSelReturn,"c_menu_item"], None] = None
+    onAfterSelect: Callable[[onSelReturn,"c_menu_item"], None]
     """ Funkce, která se zavolá po skončení funkce onSelect,
     návratová hodnota z funkce onSelect je předána do této funkce
     
@@ -80,31 +80,36 @@ class c_menu_item:
         None
     """
 
-    enabled:bool=True
+    enabled:bool
     """ Pokud je False, tak položka nereaguje """
     
-    hidden:bool=False
+    hidden:bool
     """ Pokud je True, tak položka není zobrazena """
 
-    atRight:str=""
+    atRight:str
     """ Pokud je nastaveno, tak se zobrazí na pravé straně menu"""
     
-    justifyLabel:str="l"
+    justifyLabel:str
     """ Default je 'l' i v případě chybné hodnoty, jinak:
     - l = left
     - r = right
     - c = center
     """
     
-    isTitleInverse:bool=False
+    isTitleInverse:bool
     """Pokud je True, tak nastavíme isTitle=True se label zobrazený jako titulek zobrazí inverzně"""
     
-    clearScreenOnSelect:bool=True
+    clearScreenOnSelect:bool
     """Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka"""
     
-    _isTitle:bool=False
-    _label:str=""
-    _minW:int=0
+    _isTitle:bool
+    """Pokud je True, tak je položka titulek - interní var pro property isTitle"""
+    
+    _label:str
+    """ Zobrazený název položky menu - jednořádkový, například "Start service, interní var pro property label"""
+    
+    _minW:int
+    """Minimální šířka položky menu, interní var pro property minW, interní var"""
     
     @property
     def minW(self):
@@ -208,18 +213,25 @@ class c_menu_item:
         minW:int=0,
         clearScreenOnSelect:bool=True        
     ):
-        self.label = label
+        self._isTitle=False
+        self._label=""
+        self._minW=0        
+        
         self.choice = choice
+        self.data = data
         self.onSelect = onSelect
         self.onAfterSelect = onAfterSelect
-        self.data = data
         self.enabled=enabled
         self.hidden=hidden
         self.atRight=atRight
-        self.isTitle=isTitle
         self.justifyLabel=labelJustify
-        self.minW=minW
+        self.isTitleInverse=False
         self.clearScreenOnSelect=clearScreenOnSelect
+        
+        # settery
+        self.label = label
+        self.isTitle=isTitle
+        self.minW=minW
         
     def __repr__(self):
         r= f"c_menu_item( '{self.label}'"
@@ -285,7 +297,8 @@ class c_menu_block_items:
         ```
     """
     
-    _l:List[Tuple[str,str]]=[]
+    _l:List[Tuple[str,str]]
+    """ Interní list položek menu, každá položka je tuple (levý text, pravý text) """
     
     def __init__(self,items:List[Union[str,Tuple[str,str],'c_menu_block_items']]=None):
         self._l=[]
@@ -528,6 +541,7 @@ class c_menu:
         Raises:
             ValueError: pokud není menu list nebo obsahuje jiné typy než c_menu_item            
         """
+        
         # kontrola items
         if not isinstance(menu, (list, tuple)):
             raise ValueError(TXT_CMENU_ERR06)
@@ -570,6 +584,26 @@ class c_menu:
         if not isinstance(subTitle,c_menu_block_items):
             raise ValueError(TXT_CMENU_ERR11.format(co="subTitle"))
         self.subTitle=subTitle
+        
+        # init s možností override ze static redefinice v child
+        self.title=self.title
+        self.afterTitle=self.afterTitle
+        self.afterMenu=self.afterMenu
+        self.lastReturn=self.lastReturn
+        self.onEnterMenu=self.onEnterMenu
+        self.onShowMenu=self.onShowMenu
+        self.onShownMenu=self.onShownMenu
+        self.onExitMenu=self.onExitMenu
+        self.choiceBack=self.choiceBack
+        self.choiceQuit=self.choiceQuit
+        self.ESC_is_quit=self.ESC_is_quit
+        self.minMenuWidth=self.minMenuWidth
+        self.setInputMessageWitthToLastCalc=self.setInputMessageWitthToLastCalc
+        self._runSelItem=self._runSelItem
+        self._mData=self._mData
+        self._lastCalcMenuWidth=self._lastCalcMenuWidth
+        self._selectedItem=self._selectedItem
+        
 
     def __getList(self) -> list[c_menu_item]:
         """ Vrací seznam položek menu s, pokud není None, back a quit """
