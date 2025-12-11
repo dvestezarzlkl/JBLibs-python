@@ -322,13 +322,33 @@ class c_menu_block_items:
         ```
     """
     
+    __rightBrackets:None|str|bool
+    """
+    - Pokud je nastaveno, tak se použije pro zobrazení pravého textu místo glob nastavení menu
+    - False vypne zobrazení pravých závorek
+    - None použije se globální nastavení menu
+    """
+    
     _l:List[Tuple[str,str]]
     """ Interní list položek menu, každá položka je tuple (levý text, pravý text) """
     
-    def __init__(self,items:List[Union[str,Tuple[str,str],'c_menu_block_items']]=None):
+    def __init__(
+        self,
+        items:List[Union[str,Tuple[str,str],'c_menu_block_items']]=None,
+        rightBrackets:None|str|bool=None
+    ):
+        self.rightBrackets = rightBrackets
         self._l=[]
         if items:
             self.extend(items)
+    """ Inicializace c_menu_block_items
+    Parameters:
+        items (List[Union[str,Tuple[str,str],'c_menu_block_items']]): položky k přidání do bloku menu
+        rightBrackets (None|str|bool): nastavení pravých závorek pro blok položek menu
+            - Pokud None tak se použije globálního nastavení menu
+            - Pokud False tak se pravé závorky nezobrazí
+            - Jinak musí být zadán jeden znak jako pravá závorka
+    """
     
     def __repr__(self):
         return self._l.__repr__()
@@ -397,6 +417,7 @@ class c_menu_block_items:
                     - pokud je val[1]=='c' tak se val[0] vycentruje (přidají se mezery okolo)
                 - `list` = stejně jako tuple
                 - `c_menu_block_items` = jiný objekt c_menu_block_items, jeho obsah se přidá k tomuto objektu
+                    včetně nastavení rightBrackets
                 
         Returns:
             c_menu_block_items: vrátí instanci třídy
@@ -408,11 +429,42 @@ class c_menu_block_items:
             return self
         elif isinstance(items,c_menu_block_items):
             self._l.extend(items._l)
+            self.__rightBrackets=items.rightBrackets
             return self
         elif isinstance(items,str):
             self._l.append((items,""))
             return self
         raise ValueError("Invalid format of items")
+    
+    
+    @property
+    def rightBrackets(self) -> None|str:
+        """Vrací nastavení pravých závorek pro blok položek menu
+        
+        Returns:
+            None|str: výstupní hodnota
+        """
+        return self.__rightBrackets
+    
+    @rightBrackets.setter    
+    def rightBrackets(self, value:None|str):
+        """Nastaví pravé závorky pro blok položek menu
+        
+        Parameters:
+            value (None|str): vstupní hodnota 
+               Pokud None tak se použije globálního nastavení menu, jinak je globální nastavení přepsáno tímto nastavením
+        """
+        if value is None:
+            self.__rightBrackets = None
+            return
+        if value is False:
+            self.__rightBrackets = False
+            return
+        if not isinstance(value,str):
+            value=str(value)
+        if len(value)!=1 or not value in _bracket_pairs.values():
+            raise ValueError("Invalid format of rightBrackets")
+        self.__rightBrackets = value
     
     def __iter__(self):
         return iter(self._l)
@@ -445,10 +497,30 @@ class c_menu:
     """ Třída reprezentující menu, doporučuje se extend s přepisem potřebných hodnot """
 
     menu: list[c_menu_item] = []
-    """ Položky menu """
+    """ Položky menu mohou být: 
+        - c_menu_item = normální položka menu
+            - pokud callable funkce neobsahuje funkci ale class `c_menu` nebo jeho child, tak se předá kontrola tomuto menu
+                a sem se vrací při esc nebo jeho ukončení 
+            - pokud vrátí callable funkce v c_menui_item hodnotu
+                - False tak nic nestane, čeká se na další klávesu
+                - None tak se také nic nestane ale menu se překreslí a resetuje 
+                - onSelReturn - následně se menu chová podle nastavení tohto objektu, ukončení, hlačení chyb atp
+        - None = prázdný řádek
+        - c_menu_title_label = nadpis sekce menu
+    """
 
     title: c_menu_block_items = c_menu_block_items('Menu')
-    """ Název menu, může být jednořádkový nebo víceřádkový s LF bez CR """
+    """ Text 'Menu', může být jednořádkový nebo víceřádkový s LF bez CR
+    Podporován je i List položek pro fomátování levého a pravého textu
+    například:
+        ```
+        title=c_menu_block_items()
+        title.append( ("Nadpis menu","c") ) # vycentrovaný nadpis zajístí 'c' v druhém parametru
+        title.append( ("Verze:", "1.0.0") ) # levý a pravý text
+        title.append( "-" ) # oddělovací čára kde musá být právě jeden znak z podporovaných znaků jako '-','*','+','_','=','~','.'
+        title.append( ("Aktuální cesta:", os.getcwd()) )
+        ```
+    """
 
     subTitle: c_menu_block_items = c_menu_block_items()
     """ Podtitulek menu - je to řádek za title odsazený mezerou, může být multiline s LF bez CR """
@@ -754,16 +826,20 @@ class c_menu:
         ]
     
     @staticmethod
-    def getBrackets(b:str)->Tuple[str,str]:
+    def getBrackets(b:str|bool)->Tuple[str,str]:
         """Sanitizuje vstup a vrátí pár závorek podle zadaného znaku
         
         Parameters:
             b (str): závorka, může být "(","[","{","<" anebo "",  
-                pro nepárové znaky jsou povolené tyto znaky "/","\\","|"
+                 pro nepárové znaky jsou povolené tyto znaky "/","\\","|"
+                - pokud je b False tak se závorky nevykreslí tzn vrátí se prázdné řetězce
         
         Returns:
             Tuple[str,str]: pár závorek L a R
-        """        
+        """
+        if b is False:
+            return "",""
+        
         # sanitizace závorek
         b = b[0] if isinstance(b, str) and b else "" 
         
@@ -782,7 +858,7 @@ class c_menu:
         lst: c_menu_block_items,
         onlyOneColumn: bool = False,
         spaceBetweenTexts: int = 3,
-        rightTxBrackets: str = "(", # podpora "", "(", "[", "{", ":" a "-"
+        rightTxBrackets: str|bool = "(", # podpora False=vypnuto - "", "(", "[", "{", ":" a "-"
         minWidth: int = 0,
         linePrefix:str='', # může být například '- '
     )-> Tuple[List[str],int]: # list položek a max délku řádku        
@@ -933,6 +1009,7 @@ class c_menu:
                 - "(","[","{" tak se zobrazí závorky kolem pravého textu tzn např "xxx" bude "(xxx)
                 - "" tak se text neupravuje
                 - ":","-" tak budou použity jako odsazení, tzn např "xxx" bude ": xxx"
+                - POZOR pokud nastavíme rightBrackets v c_menu_block_items tak má přednost před tímto nastavením
             outToList (list): Pokud je uveden, tak se výstup vytiskne/přidá do tohoto listu místo na obrazovku
             
         Returns:
@@ -968,7 +1045,7 @@ class c_menu:
                 onlyOneColumn=False,
                 linePrefix=charSubtitle+" ",
                 minWidth=width,
-                rightTxBrackets=rightTxBrackets
+                rightTxBrackets=subTitle_items.rightBrackets if subTitle_items.rightBrackets is not None else rightTxBrackets
             )[1]
         )
         pass
@@ -978,7 +1055,7 @@ class c_menu:
             onlyOneColumn=False,
             spaceBetweenTexts=space_between_texts,
             minWidth=width,
-            rightTxBrackets=rightTxBrackets
+            rightTxBrackets=title_items.rightBrackets if title_items.rightBrackets is not None else rightTxBrackets
         )
         width = max(width, processed_title_items[1])
         processed_title_items = processed_title_items[0]
@@ -1466,6 +1543,10 @@ class c_menu:
                     if isinstance(item, c_menu_item) and item.clearScreenOnSelect is True:
                         cls()
                     self.lastReturn = item.onSelect(item)
+                    if self.lastReturn is False:
+                        self.lastReturn = onSelReturn()
+                        continue # čekej na další klávesu
+                    
                     # zpracuj návratovou hodnotu z funkce onSelect
                     first=True # po návratu je to vpodstatě také první načtení menu
                     if not isinstance(self.lastReturn, onSelReturn):
