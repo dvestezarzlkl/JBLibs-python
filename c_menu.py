@@ -618,6 +618,7 @@ class c_menu:
     """poslední spočítaná šírka menu"""
     
     _selectedItem: c_menu_item = None
+    """ Aktuálně vybraná položka menu  - označená při zobrazení """
 
     __regKeys:dict={}
     """ registrované klávesy pro menu, klíč je string klávesy, hodnota je funkce bez parametrů, 
