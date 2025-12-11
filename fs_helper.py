@@ -5,6 +5,7 @@ from typing import List
 from dataclasses import dataclass
 from enum import Enum
 from .c_menu import c_menu,c_menu_item,onSelReturn,c_menu_block_items
+from .term import text_inverse
 
 @dataclass
 class c_fs_itm:
@@ -28,8 +29,8 @@ class e_fs_menu_select(Enum):
 
 def getDir(
     dir: str|Path,
-    filterFile: str|bool = True,
-    filterDir:str|bool=True,
+    filterFile: str|re.Pattern|bool = True,
+    filterDir:str|re.Pattern|bool=True,
     current_dir: str|Path|None = None,
     hidden: bool = False
 ) -> tuple[Path, List[c_fs_itm]]:
@@ -61,10 +62,10 @@ def getDir(
     """
     if not isinstance(dir, (str, Path)):
         raise TypeError("dir musí být string nebo Path")
-    if not isinstance(filterFile, (str, bool)):
-        raise TypeError("filterFile musí být string nebo None")
-    if not isinstance(filterDir, (str, bool)):
-        raise TypeError("filterDir musí být string nebo bool")
+    if not isinstance(filterFile, (str, bool, re.Pattern)):
+        raise TypeError("filterFile musí být string bool nebo re.Pattern")
+    if not isinstance(filterDir, (str, bool, re.Pattern)):
+        raise TypeError("filterDir musí být string bool nebo re.Pattern")
     if isinstance(current_dir, str):
         current_dir = Path(current_dir).resolve()
     if not isinstance(current_dir, (Path, type(None))):
@@ -96,9 +97,16 @@ def getDir(
     
     flRgx:None|re.Pattern = None
     dirRgx:bool|re.Pattern = None
-    if isinstance(filterFile, str):
+    if filterFile is False:
+        flRgx = False
+    elif isinstance(filterFile, str):
         flRgx = re.compile(filterFile,re.IGNORECASE)
-    if isinstance(filterDir, str):
+    else:
+        flRgx = filterFile
+    
+    if filterDir is False:
+        dirRgx = False
+    elif isinstance(filterDir, str):
         dirRgx = re.compile(filterDir,re.IGNORECASE)
     else:
         dirRgx = filterDir
@@ -107,7 +115,7 @@ def getDir(
     for entry in base.iterdir():
         name = entry.name
 
-        # filtrace podle masky
+        # filtrace podle regexu
         if entry.is_file():
             if not hidden and name.startswith("."):
                 continue            
@@ -149,17 +157,32 @@ class fs_menu(c_menu):
     Využívá getDir pro získání seznamu položek.
     """
     
-    _VERSION_:str="2.0.0"
-    
+    _VERSION_:str="2.1.0"
+        
     def __init__(
         self,
-        dir: str,
+        dir: str|Path,
         select:e_fs_menu_select = e_fs_menu_select.file,
         hidden: bool = False,
         itemsOnPage: int = 30,
+        lockToDir: None|str|Path = None,
         *args,
         **kwargs
     ) -> None:
+        """Inicializace fs_menu.
+        Parametry:
+            dir (str|Path): Výchozí adresář pro zobrazení., může obsahovat '' pokud máme zadané lockToDir
+            select (e_fs_menu_select): Typ výběru - adresář nebo soubor.
+            hidden (bool): Zda zobrazit skryté soubory (začínající tečkou).
+            itemsOnPage (int): Počet položek na stránku.
+            lockToDir (None|str|Path): Pokud je zadáno, bude uživatel uzamčen do tohoto adresáře a tím se z něj stane root
+                - cesta je ale vždy vrácena jako absolutní až do fyzickkého rootu systému.  
+                - Nahrazuje chRoot.
+        Raises:
+            TypeError: Pokud jsou parametry v nesprávném formátu.
+        
+        """
+        
         super().__init__(*args, **kwargs,minMenuWidth=80)
         
         if not isinstance(select, e_fs_menu_select):
@@ -173,12 +196,55 @@ class fs_menu(c_menu):
         self.select:e_fs_menu_select = select
         """Typ výběru: adresář nebo soubor."""
         
-        self.dir = dir
-        self.filterFile = filterFile
-        self.filterDir = filterDir
-        self.current_dir = Path(dir).resolve()
-        self.hidden = hidden
-        self.items = []
+        self.dir:Path = dir
+        """Výchozí adresář pro zobrazení."""
+        
+        if isinstance(self.dir, str):
+            self.dir = Path(self.dir)
+        if not isinstance(self.dir, Path):
+            raise TypeError("dir musí být string nebo Path")
+        
+        self.filterFile:str|re.Pattern|bool = filterFile
+        """Filtry pro soubory."""
+        
+        self.filterDir:str|re.Pattern|bool = filterDir
+        """Filtry pro soubory a adresáře."""
+               
+        self.chRoot:None|Path = None
+        """Kořenový adresář pro uzamčení uživatele."""
+        if lockToDir is not None:
+            if isinstance(lockToDir, str):
+                lockToDir = Path(lockToDir)
+            if not isinstance(lockToDir, Path):
+                raise TypeError("chRoot musí být string nebo Path")
+            if not lockToDir.is_absolute():
+                raise ValueError("chRoot musí být absolutní cesta")
+            self.chRoot = lockToDir.resolve()
+            
+        
+        if not self.dir.is_absolute():
+            if isinstance(self.chRoot, Path):
+                # je definován root tak připojíme k němu relativní cestu
+                self.dir = (self.chRoot / self.dir).resolve()
+            else:
+                # připojíme k aktuálnímu adresáři
+                self.dir = (Path(os.getcwd()).resolve() / self.dir).resolve()
+        else:
+            self.dir = self.dir.resolve()
+        
+        if not self.dir.is_dir():
+            raise ValueError("Adresář nebyl nalezen: " + str(self.dir))
+
+
+        self.current_dir = Path(self.dir).resolve()
+        """Aktuální adresář pro zobrazení."""        
+
+        # pokud není path v rámci chRoot, vyhodíme error
+        if isinstance(self.chRoot, Path) and not self.checkLockDir(self.current_dir):
+            raise ValueError("Zadaný adresář není v rámci lockToDir: " + str(self.current_dir))
+                
+        self.hidden: bool = hidden
+        self.items: List[c_menu_item] = []
         
         self.baseTitle:c_menu_item = c_menu_block_items()
         # self.title.append( ("Výběr souboru/adresáře","c") )
@@ -211,6 +277,22 @@ class fs_menu(c_menu):
             self.pageItemsCount = 100
             
         self.filterList:None|re.Pattern=None
+        
+    def checkLockDir(self, path:Path)->bool:
+        """Pokud je lockDir None tak vrací True, jinak ověřuje zda je cesta v rámci lockDir.
+        Tzn path musí být absolutní, pokud není, tak vrací False.
+        Args:
+            path (Path): Cesta k ověření.
+        Returns:
+            bool: True pokud je cesta v rámci lockDir nebo pokud není lockDir nastaven.
+        """
+        if self.chRoot is None:
+            return True
+        try:
+            path.relative_to(self.chRoot)
+            return True
+        except ValueError:
+            return False
         
     def onShowMenu(self) -> None:
         """Při zobrazení menu načte položky z adresáře."""
@@ -251,9 +333,10 @@ class fs_menu(c_menu):
         self.title.extend(self.baseTitle)
         self.title.rightBrackets = False
         # přidáme navigační položky
+        ano=text_inverse(" ANO ")
         self.title.append( (
-            f"Zobrazení skrytých souborů: " + ("ANO" if self.hidden else "NE"),
-            f"Zobr. jen soubory: " +("NE" if self.filterDir is True else (self.filterDir if isinstance(self.filterDir,str) else "ANO"))
+            f"Zobrazení skrytých souborů: " + (ano if self.hidden else "NE"),
+            f"Zobr. jen soubory: " +("NE" if self.filterDir is True else (self.filterDir if isinstance(self.filterDir,str) else ano))
         ))
         
         self.menu.append(None)  # oddělovač
@@ -262,9 +345,23 @@ class fs_menu(c_menu):
         
         # aktualizace subtitle
         self.subTitle = c_menu_block_items()
-        self.subTitle.append( (f"Aktuální adresář:", str(self.current_dir)) )
-        self.subTitle.append( (f"Stránka:", f"{self.page + 1} / {((len(self.dirItems) - 1) // self.pageItemsCount) + 1}") )
-        self.subTitle.append( (f"Filtr názvů souborů:", self.filterList if self.filterList else "ŽÁDNÝ") )
+        if isinstance(self.chRoot, Path):
+            self.subTitle.append( (f"Uzamčeno do:", str(self.chRoot)) )
+        self.subTitle.append( (f"Filtr názvů souborů:", text_inverse(" "+self.filterList.pattern+" ") if self.filterList else "ŽÁDNÝ") )
+        
+        # aktuální cesta
+        self.afterTitle =[]
+        self.afterTitle.append( (f"Akt.cesta: ", str(self.current_dir)) )        
+        self.afterTitle.append('-')
+
+        # přidáme info o počtu položek a stránkování        
+        self.afterMenu =[]
+        self.afterMenu.append('-')
+        self.afterMenu.append( (f"Celkem položek: ", str(len(self.dirItems))) )
+        total_pages = max(1, ((len(self.dirItems) - 1) // self.pageItemsCount) + 1)
+        self.afterMenu.append(("Stránka:", f"{self.page + 1} / {total_pages}"))
+        self.afterMenu.append('=')
+        
         
     def vyberItem(self, item:c_menu_item) -> onSelReturn:
         """Zpracuje výběr položky."""
@@ -287,20 +384,26 @@ class fs_menu(c_menu):
                 self.current_dir = self.current_dir / fs.name
                 self.filterList = None
                 self.menuRecycle=True
+                self._selectedItem = None  # zrušíme výběr protože jsme změnili adresář
         
         return None
     
     def outAdr(self, item:c_menu_item) -> None:
         """Zpracuje vložení klávesy."""
 
-        if isinstance(item, c_menu_item):
-            fs:c_fs_itm = getattr(item,'data',None)
-            if isinstance(fs, c_fs_itm):        
-                parent = self.current_dir.parent
-                if parent != self.current_dir:
-                    self.current_dir = parent
-                    self.filterList = None
-                    self.menuRecycle=True
+        # if isinstance(item, c_menu_item):
+        #    fs:c_fs_itm = getattr(item,'data',None)
+        #    if isinstance(fs, c_fs_itm):
+        # toto může kdykoliv, protože jdeme jen o úroveň výš a může být situace výberu dir kde v dir není žádný dir
+        parent = self.current_dir.parent                
+        if parent != self.current_dir:
+            if isinstance(self.chRoot, Path) and not self.checkLockDir(parent):
+                return None
+            
+            self.current_dir = parent
+            self.filterList = None
+            self.menuRecycle=True
+            self._selectedItem = None  # zrušíme výběr protože jsme změnili adresář
         
         return None
     
@@ -348,7 +451,7 @@ class fs_menu(c_menu):
                 self.filterList = None
             else:
                 rg=re.compile(inp,re.IGNORECASE)
-                self.filterList = rg.pattern
+                self.filterList = rg
             self.menuRecycle = True
             self.oldDir = None  # vynutí načtení znovu
         return None
