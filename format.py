@@ -275,3 +275,113 @@ class bytesVal:
         
     def __repr__(self):
         return self.__str__()
+
+class cliSize:
+    """Velikost pro CLI příkazy (např. '512M', '1G', atd.)"""
+    
+    __size_bytes:int
+    __inMb:bool = False
+    
+    def __init__(self, sizeStr:str, ifIntIsMiB:bool=False) -> None:
+        """Inicializace velikosti z CLI formátu (např. '512M', '1G') nebo z int (v bytech nebo MiB).
+        Args:
+            sizeStr (str|int): Velikost jako string (např. '512M', '1G', atd.) nebo int (v bytech nebo MiB).
+            ifIntIsMiB (bool): Pokud je sizeStr int, určuje zda je to v MiB (True) nebo v bytech (False).
+        """
+        self.__inMb = bool(ifIntIsMiB)
+        if isinstance(sizeStr, int):
+            if ifIntIsMiB:
+                self.__size_bytes = sizeStr * 1024 * 1024
+            else:
+                self.__size_bytes = sizeStr
+        elif isinstance(sizeStr, str):
+            self.__size_bytes = self.strToInt(sizeStr)
+        
+    @staticmethod
+    def strToInt(sizeStr:str)-> int:
+        """Převod velikosti z CLI formátu (např. '512M', '1G') na velikost v MiB.
+        Args:
+            sizeStr (str): Velikost jako string (např. '512M', '1G', atd.).
+        Returns:
+            int: Velikost v bytech
+        Raises:
+            ValueError: Pokud je neplatný formát velikosti.
+        """
+        if not isinstance(sizeStr, str):
+            raise ValueError("sizeStr musí být string.")
+        sizeStr = sizeStr.strip().upper()
+        match = re.match(r"^(\d+)([MKGTPB]?)$", sizeStr)
+        if not match:
+            raise ValueError("Neplatný formát velikosti. Použijte číslo následované volitelně jednotkou (M, G, K, T, P).")
+        sizeValue = int(match.group(1))
+        sizeUnit = match.group(2) or "B"
+        sizeInB = sizeValue
+        if sizeUnit == "B":
+            sizeInB = sizeValue
+        elif sizeUnit == "K":
+            sizeInB = sizeValue * 1024
+        elif sizeUnit == "M":
+            sizeInB = sizeValue * 1024 * 1024
+        elif sizeUnit == "G":
+            sizeInB = sizeValue * 1024 * 1024 * 1024
+        elif sizeUnit == "T":
+            sizeInB = sizeValue * 1024 * 1024 * 1024 * 1024
+        elif sizeUnit == "P":
+            sizeInB = sizeValue * 1024 * 1024 * 1024 * 1024 * 1024
+        else:
+            raise ValueError("Neplatná jednotka velikosti. Použijte M, G, K, T, P.")
+        return sizeInB
+    
+    @property
+    def isInMiB(self)-> bool:
+        """Vrátí True pokud je velikost v MiB, jinak False (v bytech)."""
+        return self.__inMb
+    
+    @property
+    def value(self)-> int:
+        """Vrátí velikost jako int (v MiB nebo bytech podle nastavení)."""
+        if self.__inMb:
+            return self.__size_bytes // (1024 * 1024)
+        else:
+            return self.__size_bytes
+    
+    @property
+    def inBytes(self)-> int:
+        """Vrátí velikost v bytech."""
+        return self.__size_bytes
+    
+    @property
+    def inMiB(self)-> int:
+        """Vrátí velikost v MiB."""
+        return self.__size_bytes // (1024 * 1024)
+    
+    @staticmethod
+    def intToStr(val:int)-> str:
+        """Převod velikosti na CLI formát (např. '512M', '1G').
+        Args:
+            val (int): Velikost v bytech
+        Returns:
+            str: Velikost jako string (např. '512M', '1G', atd.).
+        """
+        cnt=0
+        while val >= 1024 and cnt < 5:
+            val = val // 1024
+            cnt += 1
+        units = ['B', 'K', 'M', 'G', 'T', 'P']
+        return f"{val}{units[cnt]}"
+        
+    
+    def __str__(self)-> str:
+        """Vrátí velikost jako string (např. '512M', '1G', atd.)."""
+        return cliSize.intToStr(self.inBytes)
+        
+    def __int__(self)-> int:
+        """Vrátí velikost jako int (v MiB nebo bytech podle nastavení)."""
+        if self.__inMb:
+            return self.__size_bytes // (1024 * 1024)
+        else:
+            return self.__size_bytes
+        
+    def __repr__(self)-> str:
+        """Vrátí reprezentaci objektu."""
+        return f"cliSize(size={self.__size_bytes} bytes, inMiB={self.__inMb})"

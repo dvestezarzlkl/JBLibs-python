@@ -8,7 +8,8 @@ loadLng()
 
 import re, getpass
 from .c_menu import printBlock
-from typing import Union,Callable
+from typing import Union,Callable,Optional
+from .format import cliSize
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -85,7 +86,7 @@ def get_input(
         errTx:str=TXT_SSMD_ERR18,
         titleNote:str="",
         minMessageWidth:int=0
-    ) -> str:
+    ) -> str|None:
     """
     Obecná funkce pro získání vstupu od uživatele, validuje vstup
     
@@ -471,3 +472,57 @@ def select(
     m.run()
     reset()
     return selectReturn(m.getLastSelItem(),m.getCalcWidth())
+
+def inputCliSize(minSize:Union[int|str]=1, maxSize:Optional[Union[int|str]]=None,inMiB:bool=False,clearScreen:bool=False, minMessageWidth:int=0)-> tuple[int,str]:
+    """Interaktivní zadání velikosti pro CLI příkazy tzn jako '512M', '1G', atd.
+    Args:
+        minSize (int|str): Minimální velikost v bytech
+        maxSize (Optional[int|str]): Maximální velikost v bytech, pokud je None, tak není omezená
+        inMiB (bool): Pokud je True, vrací velikost v MiB, jinak v bytech, platí jen pokud se zadávají
+            velikosti jako int, pokud se zadávají jako string (např. '1G'), tak se dekůduje z jednotky 
+        clearScreen (bool): Pokud je True, smaže obrazovku před zadáním.
+        minMessageWidth (int): Minimální šířka zprávy.
+    Returns:
+        cliSize: Objekt cliSize reprezentující zadanou velikost.
+        None pokud uživatel zruší zadání.
+    """
+    if not isinstance(minSize, (int, str)):
+        raise ValueError("Parameter minSize must be int or str")
+    if maxSize is not None and not isinstance(maxSize, (int, str)):
+        raise ValueError("Parameter maxSize must be int, str or None")
+    
+    minSize= cliSize(minSize, inMiB).inBytes
+    maxSize=None if maxSize is None else cliSize(maxSize,inMiB).inBytes
+    
+    minSize = max(0, minSize)
+    maxSize = maxSize if isinstance(maxSize, int) and maxSize >= minSize else None
+    
+    prompt =  f"{TXT_INP_CLI_SIZE_001}"
+    prompt += f"\n{TXT_INP_CLI_SIZE_MIN}: {cliSize(minSize)}"
+    if maxSize is not None:
+        prompt += f"  |  {TXT_INP_CLI_SIZE_MAX}: {cliSize(maxSize)}"
+            
+    while True:        
+        x=get_input(
+            prompt,
+            False,
+            re.compile(r"^(\d+)([MKGTP]?)$"),
+            0,
+            clearScreen,
+            TXT_INP_CLI_ERR,
+            minMessageWidth=minMessageWidth
+        )
+        if x is None:
+            return None
+        n=cliSize(x)
+        v=n.inBytes
+        if v < minSize :
+            print( TXT_INP_CLI_ERR_MIN.format(minSize=cliSize(minSize),size=n) )
+            anyKey()
+            continue
+        if maxSize is not None and v > maxSize:
+            print(TXT_INP_CLI_ERR_MAX.format(maxSize=cliSize(maxSize),size=n))
+            anyKey()
+            continue
+        
+        return cliSize(x)
