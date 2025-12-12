@@ -217,9 +217,9 @@ class fs_menu(c_menu):
             if isinstance(lockToDir, str):
                 lockToDir = Path(lockToDir)
             if not isinstance(lockToDir, Path):
-                raise TypeError("chRoot musí být string nebo Path")
+                raise TypeError("lockToDir musí být string nebo Path")
             if not lockToDir.is_absolute():
-                raise ValueError("chRoot musí být absolutní cesta")
+                raise ValueError("lockToDir musí být absolutní cesta")
             self.chRoot = lockToDir.resolve()
             
         
