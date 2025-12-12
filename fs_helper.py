@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from .c_menu import c_menu,c_menu_item,onSelReturn,c_menu_block_items
 from .term import text_inverse
+from .format import bytesTx
 
 @dataclass
 class c_fs_itm:
@@ -314,11 +315,12 @@ class fs_menu(c_menu):
                 
                 self.dirItems.append(
                     c_menu_item(
-                        display_name+itm.ext,
+                        display_name,
                         f"{choice:02}",
                         self.vyberItem,
                         None,
-                        itm
+                        itm,
+                        atRight=str(bytesTx(itm.size)) if itm.is_file else "<DIR>"
                     )
                 )
                 choice+=1
