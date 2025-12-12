@@ -627,7 +627,7 @@ class c_menu:
     def __init__(
         self,
         menu: list[c_menu_item,None,c_menu_title_label] = [],
-        minMenuWidth:int=0,
+        minMenuWidth:int|None=None,
         esc_is_quit:bool=None, # pokud None tak se použije self.ESC_is_quit
         quitEnable:bool=True,
         title:Union[str,c_menu_block_items]='Menu',
@@ -638,7 +638,9 @@ class c_menu:
         Parameters:
             menu (list[c_menu_item]): default `[]`, nepovinné, položky menu
             minMenuWidth (int): default `0`, nepovinné, minimální šířka menu, pokud je nastaveno tak se menu nezmenší pod tuto hodnotu,  
-                povolené hodnoty jsou 0, a pak rozsah 20-100
+                povolené hodnoty jsou 0, a pak rozsah 20-100  
+                - pokud None tak se použije self.minMenuWidth
+            
             
         Raises:
             ValueError: pokud není menu list nebo obsahuje jiné typy než c_menu_item            
@@ -657,15 +659,16 @@ class c_menu:
                 raise ValueError(TXT_CMENU_ERR07)
         self.menu = menu
         
-        if not isinstance(minMenuWidth,int):
-            raise ValueError(TXT_CMENU_ERR08)
-        if minMenuWidth<0:
-            minMenuWidth=0
-        if minMenuWidth>100:
-            minMenuWidth=100
-        if minMenuWidth>0 and minMenuWidth<20:
-            minMenuWidth=20
-        self.minMenuWidth=minMenuWidth
+        if not minMenuWidth is None:
+            if not isinstance(minMenuWidth,int):
+                raise ValueError(TXT_CMENU_ERR08)
+            if minMenuWidth<0:
+                minMenuWidth=0
+            if minMenuWidth>100:
+                minMenuWidth=100
+            if minMenuWidth>0 and minMenuWidth<20:
+                minMenuWidth=20
+            self.minMenuWidth=minMenuWidth
         
         if not isinstance(esc_is_quit,bool) and esc_is_quit is not None:
             raise ValueError(TXT_CMENU_ERR09)
