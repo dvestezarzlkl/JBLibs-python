@@ -39,3 +39,8 @@ Více viz komentáře v knihovně
 Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm, select
 
 Víc v komentářích knihovny
+
+## fs_helper
+
+Knihovna pro práci se souborovým systémem, interaktivní výběr souborů/adresářů v terminálu.
+Více viz [dokumentace](Readme_fs_helper.md)

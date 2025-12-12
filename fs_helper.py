@@ -2,19 +2,69 @@ import os
 from pathlib import Path
 import re
 from typing import List
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from enum import Enum
 from .c_menu import c_menu,c_menu_item,onSelReturn,c_menu_block_items
 from .term import text_inverse
 from .format import bytesTx
+from datetime import datetime
+from typing import Optional, Union
+
+"""
+Modul pro pomocné funkce související se souborovým systémem.
+Hlavní třídou je fs_menu, která umožňuje procházet adresáře a vybírat soubory nebo adresáře.
+
+Pouřití např:
+```python
+from libs.JBLibs.fs_helper import e_fs_menu_select,fs_menu,c_fs_itm
+from pathlib import Path
+from libs.JBLibs.format import bytesTx
+            
+m=fs_menu('python',
+    select=e_fs_menu_select.file,
+    itemsOnPage=15,
+    lockToDir=Path('/mnt')
+)
+
+if m.run() is None:
+    x=m.getLastSelItem() # vrací c_menu_item nebo None
+    if not x is None:
+        x:c_fs_itm=x.data # pokud je vráceno c_menu_item, získáme data která obsahují c_fs_itm
+        print(
+            f"Vybraný soubor: {x.name}, ext: {x.ext}\n"
+            f"Cesta: {x.path}\n"
+            f"Velikost souboru: {bytesTx(x.size)}\n"
+            f"Poslední modifikace: {x.mtimeTx}"
+        )
+    else:
+        print("Nebyl vybrán žádný soubor.")
+else:
+    print("Výběr byl zrušen.")
+```
+"""
+
+def VERSION() -> str:
+    return fs_menu._VERSION_
 
 @dataclass
 class c_fs_itm:
     name: str
+    """Název souboru nebo adresáře. Včetně přípony pro soubory."""
+    
     ext: str
+    """Přípona souboru, včetně tečky, malá písmena. Prázdné pro adresáře."""
+    
     size: int
+    """Velikost souboru v bytech."""
+    
     mtime: int
+    """Čas poslední modifikace jako unix timestamp."""
+    
     type: int   # 0=file, 1=dir
+    """Typ položky: 0=soubor, 1=adresář, jednoduše lze testovat přes is_file a is_dir vlastnosti."""
+    
+    path: Path
+    """Cesta k souboru nebo adresáři."""
 
     @property
     def is_file(self) -> bool:
@@ -23,7 +73,35 @@ class c_fs_itm:
     @property
     def is_dir(self) -> bool:
         return self.type == 1
-
+    
+    __mtimeStr:Optional[str]=field(default=None, init=False, repr=False)
+    @property
+    def mtimeTx(self) -> str:
+        """Vrátí čas poslední modifikace jako čitelný řetězec."""
+        if self.__mtimeStr is None:
+            self.__mtimeStr=datetime.fromtimestamp(self.mtime).strftime("%Y-%m-%d %H:%M:%S")
+        return self.__mtimeStr
+    
+    __sizeTx:Optional[bytesTx]=field(default=None, init=False, repr=False)
+    @property
+    def sizeTx(self) -> bytesTx:
+        """Vrátí velikost jako bytesTx objekt."""
+        if self.__sizeTx is None:
+            self.__sizeTx=bytesTx(self.size)
+        return self.__sizeTx
+    
+    def __repr__(self):
+        return (
+            f"c_fs_itm("
+            f"name={self.name!r}, "
+            f"ext={self.ext!r}, "
+            f"size={self.size}, "
+            f"mtime={self.mtimeTx}, "
+            f"type={'DIR' if self.is_dir else 'FILE'}, "
+            f"path={str(self.path)!r}"
+            f")"
+        )
+    
 class e_fs_menu_select(Enum):
     dir=1
     file=2
@@ -141,7 +219,8 @@ def getDir(
                 ext=ext,
                 size=stat.st_size,
                 mtime=int(stat.st_mtime),
-                type=1 if entry.is_dir() else 0
+                type=1 if entry.is_dir() else 0,
+                path=entry.resolve()
             )
         )
 
@@ -158,7 +237,7 @@ class fs_menu(c_menu):
     Využívá getDir pro získání seznamu položek.
     """
     
-    _VERSION_:str="2.1.0"
+    _VERSION_:str="2.2.0"
         
     def __init__(
         self,
@@ -251,6 +330,7 @@ class fs_menu(c_menu):
         # self.title.append( ("Výběr souboru/adresáře","c") )
         self.baseTitle.append( ("Výběr "+ ("adresáře" if select is e_fs_menu_select.dir else "souboru"),"c") )
         self.baseTitle.append( (f"v.: {self._VERSION_}") )
+        self.baseTitle.append( ("","Pohyb adresáři: → ←, PgUp/PgDn, Home/End") )
         
         self.keyBind('\x1b[C', self.toAdr)
         self.keyBind('\x1b[D', self.outAdr)
