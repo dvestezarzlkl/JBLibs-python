@@ -1327,7 +1327,9 @@ class c_menu:
                 except Exception as e:
                     self.lastReturn = onSelReturn(err=str(e))
                     log.error(f"Exception on onShowMenu",exc_info=True)
-                    err.append(str(e))
+                    err.append(
+                        f" Exception on onShowMenu: {str(e)}, file: {traceback.extract_tb(e.__traceback__)[-1].filename}, line: {traceback.extract_tb(e.__traceback__)[-1].lineno}"
+                    ) 
         
         if self._selectedItem is None:
             self.nextItem()

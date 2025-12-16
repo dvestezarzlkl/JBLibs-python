@@ -4,6 +4,8 @@ loadLng()
 
 import re
 from typing import Union
+from .jbjh import JBJH
+from datetime import datetime
 
 class strTime:
     """ typ str time"""
@@ -355,6 +357,21 @@ class cliSize:
         """Vrátí velikost v MiB."""
         return self.__size_bytes // (1024 * 1024)
     
+    @property
+    def inGiB(self)-> int:
+        """Vrátí velikost v GiB."""
+        return self.__size_bytes // (1024 * 1024 * 1024)
+    
+    @property
+    def inMiBFloat(self)-> float:
+        """Vrátí velikost v MiB jako float."""
+        return self.__size_bytes / (1024 * 1024)
+    
+    @property
+    def inGiBFloat(self)-> float:
+        """Vrátí velikost v GiB jako float."""
+        return self.__size_bytes / (1024 * 1024 * 1024)
+    
     @staticmethod
     def intToStr(val:int)-> str:
         """Převod velikosti na CLI formát (např. '512M', '1G').
@@ -385,3 +402,306 @@ class cliSize:
     def __repr__(self)-> str:
         """Vrátí reprezentaci objektu."""
         return f"cliSize(size={self.__size_bytes} bytes, inMiB={self.__inMb})"
+
+class dateTimeFormat:
+    """Formátování datetime pro různé použití (CLI, logy, atd.)"""
+    
+    FORMATS = {
+        'MYSQL': ["%Y-%m-%d"," ","%H:%M:%S"],
+        'FILENAME': ["%Y-%m-%d","_","%H%M%S"],
+        'CZ': ["%d.%m.%Y"," ","%H:%M:%S"],
+    }
+    
+    OUT = ['d','dt','t']
+            
+    @staticmethod
+    def mysql(dt,out:str) -> str:
+        """Formátování datetime pro logy."""
+        if (dt:=JBJH.is_dateTime(dt,True) ) is not None:            
+            if out == 'd':
+                return dt.strftime(dateTimeFormat.FORMATS['MYSQL'][0])
+            elif out == 't':
+                return dt.strftime(dateTimeFormat.FORMATS['MYSQL'][2])
+            elif out == 'dt':
+                return dt.strftime(''.join(dateTimeFormat.FORMATS['MYSQL']))
+            else:
+                raise ValueError("Neplatný formát výstupu. Použijte 'd', 't' nebo 'dt'.")
+    
+    @staticmethod
+    def filename(dt,out:str) -> str:
+        """Formátování datetime pro názvy souborů."""
+        if (dt:=JBJH.is_dateTime(dt,True) ) is not None:
+            if out == 'd':
+                return dt.strftime(dateTimeFormat.FORMATS['FILENAME'][0])
+            elif out == 't':
+                return dt.strftime(dateTimeFormat.FORMATS['FILENAME'][2])
+            elif out == 'dt':
+                return dt.strftime(''.join(dateTimeFormat.FORMATS['FILENAME']))
+            else:
+                raise ValueError("Neplatný formát výstupu. Použijte 'd', 't' nebo 'dt'.")
+
+    @staticmethod
+    def CZ(dt,out:str) -> str:
+        """Formátování datetime pro české logy."""
+        if (dt:=JBJH.is_dateTime(dt,True) ) is not None:
+            if out == 'd':
+                return dt.strftime(dateTimeFormat.FORMATS['CZ'][0])
+            elif out == 't':
+                return dt.strftime(dateTimeFormat.FORMATS['CZ'][2])
+            elif out == 'dt':
+                return dt.strftime(''.join(dateTimeFormat.FORMATS['CZ']))
+            else:
+                raise ValueError("Neplatný formát výstupu. Použijte 'd', 't' nebo 'dt'.")
+
+class currencyTx:
+    """Formátování měny pro různé použití (CLI, logy, atd.)
+    Default je CZK s oddělovačem tisíců mezerou a desetinnou čárkou.
+    """
+    
+    __val:float
+    __mena:str
+    __thousands_sep:str
+    __decimal_sep:str
+    __precision:int
+    __menaPosAtEnd:bool
+    
+    def __init__(
+        self,
+        value: str | int | float,
+        decimal_sep:str=",",
+        mena:str="CZK",
+        thousands_sep:str=" ",
+        precision:int=2,
+        menaPosAtEnd:bool=True
+    ):
+        """Inicializace formátování měny.
+        Pokud je value str, tak se parsuje a vše se pokusí detekovat,  
+        POZOR !!! jediné co se nedekuje **je desetinný oddělovač** tzn pokud vkládám při init str tak musíme
+        vždy zajisti správné nastavení desetinného oddělovače, pokud není default ',', ostatní se detekuje
+        ze stringu automaticky.
+                
+        Args:
+            value (str | int | float): Hodnota měny jako string, int nebo float.
+            decimal_sep (str, optional): Desetinný oddělovač. Default je ",".
+            mena (str, optional): Měna. Default je "CZK".
+            thousands_sep (str, optional): Oddělovač tisíců. Default je " ".
+            precision (int, optional): Počet desetinných míst. Default je 2.
+            menaPosAtEnd (bool, optional): Umístění měny na konec (True) nebo na začátek (False). Default je True.
+        Raises:
+            ValueError: Pokud jsou neplatné parametry.
+        """
+        
+        self.__mena = str(mena)        
+        self.__thousands_sep = str(thousands_sep)
+        self.__decimal_sep = str(decimal_sep)
+        self.__precision = int(precision)
+        self.__menaPosAtEnd = bool(menaPosAtEnd)
+        self.parse(value)
+        
+        if re.match(r"([0-9]|[-+.,])+", self.__mena):
+            raise ValueError("Měna nesmí obsahovat číslice ani znaky - + . ,")
+        
+        if self.__thousands_sep == self.__decimal_sep:
+            raise ValueError("Oddělovač tisíců a desetinný oddělovač nesmí být stejné znaky.")
+        
+        self.__thousands_sep = JBJH.is_str(self.__thousands_sep, True)
+        if [", ","."," "].count(self.__thousands_sep) == 0 or len(self.__thousands_sep) > 1:
+            raise ValueError("Oddělovač tisíců musí být jeden z těchto znaků: ' ', ',', '.' anebo prázdný znak pro žádný oddělovač.")
+        
+        self.__decimal_sep = JBJH.is_str(self.__decimal_sep, True)
+        if [',', '.'].count(self.__decimal_sep) == 0 or len(self.__decimal_sep) != 1:
+            raise ValueError("Desetinný oddělovač musí být jeden z těchto znaků: ',', '.'")
+        
+        # test měny může být CZK nebo Kč ale nesmí obsahovat znaky oddělování, jen písmena vč diakritických znaků
+        if re.search(r"[ \d\-\+\,\.]", self.__mena):
+            raise ValueError("Měna nesmí obsahovat číslice, mezery ani znaky - + , .")
+        
+        # může mít max 5 znaků
+        if len(self.__mena) > 5:
+            raise ValueError("Měna nesmí mít více než 5 znaků.")
+    
+    def parse(self, fromTx: str | int | float, decimal_sep:str|None=None) -> None:
+        """Parses a formatted currency string and updates internal value."""
+        if not decimal_sep:
+            decimal_sep = self.__decimal_sep
+        if not isinstance(decimal_sep, str) or len(decimal_sep) != 1 or decimal_sep not in ",.":
+            raise ValueError("Desetinný oddělovač musí být jeden z těchto znaků: ',', '.'")
+
+        # číslo → hotovo
+        if isinstance(fromTx, (int, float)):
+            self.__val = float(fromTx)
+            return
+        if not isinstance(fromTx, str):
+            raise ValueError("fromTx musí být string, int nebo float.")
+
+        s = fromTx.strip()
+        if not s:
+            self.__val = 0.0
+            return
+
+        # ----------------------------
+        # 1) Detekce prefix měny
+        # ----------------------------
+        m = re.match(r"^([^\d\-]+)", s)
+        mena = None
+        if m:
+            mena = m.group(1).strip()
+            s = s[len(m.group(0)):].strip()
+
+        # ----------------------------
+        # 2) Detekce postfix měny
+        # ----------------------------
+        m = re.search(r"([^\d\-]+)$", s)
+        if m:
+            if mena is not None:
+                raise ValueError("Měna nemůže být na začátku i na konci současně.")            
+            mena = m.group(1).strip()
+            s = s[:-len(m.group(0))].strip()
+            self.__menaPosAtEnd = True
+        else:
+            self.__menaPosAtEnd = False
+            
+        des_c = None
+        tis_c = None
+        int_part = ""
+        dec_part = ""        
+
+        # detekce ',-' na konci
+        if re.search(f"{re.escape(decimal_sep)}[-–]$", s):
+            s = s[:-2].strip()
+            des_c = decimal_sep
+            
+
+        # validace měny
+        if mena:
+            if re.search(r"[ \d\-\+\,\.]", mena):
+                raise ValueError("Měna nesmí obsahovat číslice nebo oddělovače.")
+            if len(mena) > 5:
+                raise ValueError("Měna je příliš dlouhá.")
+            self.__mena = mena
+
+        # ----------------------------
+        # 3) Detekce znaménka
+        # ----------------------------
+        minus = False
+        if s.startswith("-"):
+            minus = True
+            s = s[1:].strip()
+
+        # ----------------------------
+        # 4) Číselná část
+        # ----------------------------
+
+        i = len(s) - 1
+
+        while i >= 0:
+            c = s[i]
+            if c.isdigit():
+                if des_c is None:
+                    dec_part = c + dec_part
+                else:
+                    int_part = c + int_part
+            else:
+                # první oddělovač od konce = desetinný
+                if des_c is None:
+                    if c == decimal_sep:
+                        des_c = c
+                    else:
+                        des_c = decimal_sep
+                        if dec_part:
+                            # pokud už máme něco v dec_part tak to přesuneme do int_part
+                            int_part = dec_part + int_part
+                            dec_part = ""
+                        if tis_c is None:
+                            tis_c = c
+                else:
+                    if des_c is not None and c == des_c:
+                        raise ValueError("Více než jeden desetinný oddělovač.")                    
+                    # další musí být tisícový a stejný
+                    if tis_c is None:
+                        tis_c = c
+                    elif tis_c != c:
+                        raise ValueError("Nesouhlasí tisícové oddělovače.")
+                    if tis_c == des_c:
+                        # pokud jsou stejné tak se předpokládá že nejsou desetiny
+                        int_part = dec_part + int_part
+                        dec_part = ""
+                        des_c = ""
+            i -= 1
+
+        if not int_part and not dec_part:
+            raise ValueError("Nenalezeny žádné číslice.")
+
+        # pokud nebyla desetinná část
+        if int_part == "":
+            int_part = dec_part
+            dec_part = ""
+            des_c = None
+
+        # ----------------------------
+        # 5) Ověření oddělovačů
+        # ----------------------------
+        if des_c:
+            if des_c not in ",.":
+                raise ValueError("Neplatný znak pro desetinný oddělovač.")
+            self.__decimal_sep = des_c
+
+        if tis_c:
+            if tis_c not in " .,":
+                raise ValueError("Neplatný znak pro tisícový oddělovač.")
+            if tis_c == des_c:
+                raise ValueError("Tisícový a desetinný oddělovač nesmí být stejný.")
+            self.__thousands_sep = tis_c
+
+        # ----------------------------
+        # 6) Výpočet
+        # ----------------------------
+        v = float(f"{int_part}.{dec_part}") if dec_part else float(int_part)
+        if minus:
+            v = -v
+
+        self.__val = v
+    
+    def __str__(self):
+        """Vrátí formátovanou měnu jako string."""
+        # formátování čísla
+        celek=int(abs(self.__val))
+        desetinna=round( abs(self.__val) - celek, self.__precision)
+        desetinnaStr=str(desetinna).replace("0.","")
+        
+        # přidáme tisícové oddělovače
+        celekStr=""
+        celekTx=str(celek)
+        ln=len(celekTx)
+        cnt=0
+        while ln > 0:
+            ln-=1
+            celekStr=celekTx[ln]+celekStr
+            cnt+=1
+            if cnt == 3 and ln > 0:
+                celekStr=self.__thousands_sep+celekStr
+                cnt=0
+                
+        if self.__precision > 0:
+            while len(desetinnaStr) < self.__precision:
+                desetinnaStr+="0"
+            finalNumber=f"{celekStr}{self.__decimal_sep}{desetinnaStr}"
+        else:
+            finalNumber=celekStr
+            
+        if self.__val < 0:
+            finalNumber = "-"+finalNumber
+            
+        if self.__menaPosAtEnd:
+            return f"{finalNumber} {self.__mena}"
+        else:
+            return f"{self.__mena} {finalNumber}"
+    
+    def __int__(self):
+        """Vrátí hodnotu jako int."""
+        return int(self.__val)
+    
+    def __float__(self):
+        """Vrátí hodnotu jako float."""
+        return float(self.__val)
+    
