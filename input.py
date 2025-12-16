@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import bcrypt
+import bcrypt,os
 from .lng.default import * 
 from .helper import loadLng
 from .term import restoreAndClearDown,savePos,getKey,cls,reset
@@ -10,6 +10,8 @@ import re, getpass
 from .c_menu import printBlock
 from typing import Union,Callable,Optional
 from .format import cliSize
+from pathlib import Path
+from .fs_helper import fs_menu,e_fs_menu_select,c_fs_itm
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -412,7 +414,7 @@ def select(
         ```
     """
     from .c_menu import c_menu,c_menu_item,onSelReturn,c_menu_block_items,c_menu_title_label
-    
+    reset()
     if not isinstance(items, list):
         raise ValueError("Parameter items must be list of select_item")
     if len(items) == 0:
@@ -473,7 +475,13 @@ def select(
     reset()
     return selectReturn(m.getLastSelItem(),m.getCalcWidth())
 
-def inputCliSize(minSize:Union[int|str]=1, maxSize:Optional[Union[int|str]]=None,inMiB:bool=False,clearScreen:bool=False, minMessageWidth:int=0)-> tuple[int,str]:
+def inputCliSize(
+    minSize:Union[int|str]=1,
+    maxSize:Optional[Union[int|str]]=None,
+    inMiB:bool=False,
+    clearScreen:bool=False,
+    minMessageWidth:int=0
+)-> Union[cliSize,None]:
     """Interaktivní zadání velikosti pro CLI příkazy tzn jako '512M', '1G', atd.
     Args:
         minSize (int|str): Minimální velikost v bytech
@@ -513,7 +521,7 @@ def inputCliSize(minSize:Union[int|str]=1, maxSize:Optional[Union[int|str]]=None
             minMessageWidth=minMessageWidth
         )
         if x is None:
-            return None
+            return None, None
         n=cliSize(x)
         v=n.inBytes
         if v < minSize :
@@ -526,3 +534,90 @@ def inputCliSize(minSize:Union[int|str]=1, maxSize:Optional[Union[int|str]]=None
             continue
         
         return cliSize(x)
+
+def selectDir(
+        dir:str|None,
+        message:str|list|c_menu_block_items|None=None,
+        hidden:bool=False,
+        lockToDir: None|str|Path = None,
+        minMenuWidth:int|None=None,
+        filterList:Optional[Union[str, re.Pattern]]=None
+    )->Path|None:
+    """Zobrazí dialog pro výběr adresáře.
+    
+    Args:
+        dir (str|None): počáteční adresář, pokud None, použije se aktuální adresář.
+        hidden (bool): pokud je True, zobrazí i skryté soubory a adresáře.
+        lockToDir (None|str|Path): Pokud je zadáno, bude uživatel uzamčen do tohoto adresáře a tím se z něj stane root
+            - cesta je ale vždy vrácena jako absolutní až do fyzickkého rootu systému.  
+            - Nahrazuje chRoot.
+        minMenuWidth (int|None): Minimální šířka menu.
+        filterList (Optional[Union[str, re.Pattern]]): Volitelný filtr pro názvy položek.
+        message (str|list|c_menu_block_items|None): Volitelná zpráva/y k zobrazení pod titulkem menu.
+    
+    Returns:
+        Path|None: vybraný adresář nebo None pokud bylo zrušeno.
+    """
+    startDir=Path(os.getcwd()).resolve() if dir is None else Path(dir).resolve()
+    m=fs_menu(
+        startDir,
+        e_fs_menu_select.dir,
+        hidden,
+        lockToDir=lockToDir,
+        minMenuWidth=minMenuWidth,
+        filterList=filterList,
+        message=message
+    )
+    if er:=m.run() is None:
+        s=m.getLastSelItem()
+        if not s is None and not s.data is None:
+            x:c_fs_itm=s.data
+            return Path(x.path).resolve()
+        else:
+            return None
+    else:
+        print(f"[ERROR] Chyba při výběru adresáře: {er.err}")
+        return None
+
+def selectFile(
+        dir:str|None,
+        message:str|list|c_menu_block_items|None=None,
+        hidden:bool=False,
+        lockToDir: None|str|Path = None,
+        minMenuWidth:int|None=None,
+        filterList:Optional[Union[str, re.Pattern]]=None
+    )->Path|None:
+    """Zobrazí dialog pro výběr souboru.
+    
+    Args:
+        dir (str|None): počáteční adresář, pokud None, použije se aktuální adresář.
+        hidden (bool): pokud je True, zobrazí i skryté soubory a adresáře.
+        lockToDir (None|str|Path): Pokud je zadáno, bude uživatel uzamčen do tohoto adresáře a tím se z něj stane root
+            - cesta je ale vždy vrácena jako absolutní až do fyzickkého rootu systému.  
+            - Nahrazuje chRoot.
+        minMenuWidth (int|None): Minimální šířka menu.
+        filterList (Optional[Union[str, re.Pattern]]): Volitelný filtr pro názvy položek.
+    
+    Returns:
+        Path|None: vybraný soubor nebo None pokud bylo zrušeno.
+    """
+    startDir=Path(os.getcwd()).resolve() if dir is None else Path(dir).resolve()
+    m=fs_menu(
+        startDir,
+        e_fs_menu_select.file,
+        hidden,
+        lockToDir=lockToDir,
+        minMenuWidth=minMenuWidth,
+        filterList=filterList,
+        message=message
+    )
+    if er:=m.run() is None:
+        s=m.getLastSelItem()
+        if not s is None and not s.data is None:
+            x:c_fs_itm=s.data
+            return Path(x.path).resolve()
+        else:
+            return None
+    else:
+        print(f"[ERROR] Chyba při výběru souboru: {er.err}")
+        return None
