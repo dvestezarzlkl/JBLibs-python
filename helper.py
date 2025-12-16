@@ -692,3 +692,95 @@ def waitForSec(seconds:float, callableCheckToStopSec:callable=None, callableChec
     else:
         log.info(" - Wait completed.")
         return 0
+   
+def run(
+    cmd: List[str]|str,
+    input_bytes: bytes | None = None,
+    print:bool=False,
+    terminalActive:bool=True
+) -> None:
+    """Spustí příkaz, logne ho a při chybě vyhodí výjimku.
+    Nepřesměruje výstup, pokud je potřeba výstup zpracovat, použijte runRet.
+    Takže fungují i programy jako fsck, které vyžadují interaktivní vstup.
+    Args:
+        cmd (List[str]|str): Příkaz k vykonání jako seznam stringů nebo jeden string.
+        input_bytes (bytes | None): Nepovinný vstup pro příkaz jako bytes.
+        print (bool): Pokud je True, vytiskne příkaz před spuštěním.
+        noOut (bool): Pokud je True, nepřesměruje stdout a stderr, jinak je přesměruje.
+           default je True, protože se předpokládají příkazy vyžadující interaktivní vstup. tzn terminalActive
+           Pokud potřebujeme výstup zpracovat, použijte False, ale nebude dostupný interaktivní vstup.
+    Returns:
+        None
+    Raises:
+        SystemError: Pokud příkaz selže.
+    """
+    if print:
+        print(f"Running command: {cmd}")
+    
+    o,r,e = runRet(cmd, False, noOut=terminalActive, input_bytes=input_bytes)
+    if r != 0:        
+        raise SystemError(f"Command failed: {cmd}\nReturn code: {r}\nOut: {o}, Error output: {e}")
+    return None
+
+def runRet(
+    cmd: Union[str, List[str]],
+    stdOutOnly: bool = True,
+    noOut: bool = False,
+    input_bytes: bytes | None = None,
+) -> Union[str, Tuple[str, int, str]]:
+    """
+    Spustí příkaz a vrátí jeho výstup.
+    Args:
+        cmd (Union[str, List[str]]): Příkaz k vykonání jako seznam stringů nebo jeden string.
+        stdOutOnly (bool): Pokud je True, vrátí pouze stdout jako string. Pokud je False, vrátí tuple (stdout, returncode, stderr).
+        noOut (bool): Pokud je True, nepřesměruje stdout a stderr, jinak je přesměruje.
+        input_bytes (bytes | None): Nepovinný vstup pro příkaz jako bytes.
+    Returns:
+        str: stdout příkazu, pokud je stdOutOnly True.
+        Tuple[str, int, str]: tuple (stdout, returncode, stderr), pokud je stdOutOnly False.
+    Raises:
+        SystemError: Pokud příkaz selže.
+    """
+    
+    use_text = input_bytes is None  # text=True jen pokud neposíláme binary input
+
+    # Pokud je cmd string → použij shell interpretaci
+    if isinstance(cmd, str):
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            input=input_bytes,
+            text=use_text,
+            stdout=None if noOut else subprocess.PIPE,
+            stderr=None if noOut else subprocess.PIPE,
+        )
+    else:
+        # musí být list stringů
+        if not isinstance(cmd, list) or not all(isinstance(x, str) for x in cmd):
+            raise ValueError("cmd must be a list of strings or a single string")
+
+        proc = subprocess.run(
+            cmd,
+            shell=False,
+            input=input_bytes,
+            text=use_text,
+            stdout=None if noOut else subprocess.PIPE,
+            stderr=None if noOut else subprocess.PIPE,
+        )
+
+    # Convert output to text if we were in binary mode
+    stdout = proc.stdout
+    stderr = proc.stderr
+
+    if not use_text:  # output je bytes → dekódujeme bezpečně
+        if stdout is not None:
+            stdout = stdout.decode(errors="replace")
+        if stderr is not None:
+            stderr = stderr.decode(errors="replace")
+
+    if stdOutOnly:
+        if proc.returncode != 0:
+            raise SystemError(f"Command failed: {cmd}\n{stderr}")
+        return stdout
+
+    return stdout, proc.returncode, stderr
