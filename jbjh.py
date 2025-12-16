@@ -349,3 +349,85 @@ class JBJH:
             if throw:
                 raise ValueError(f"Hodnota '{s}' není typu date.")
             return None
+
+    @staticmethod
+    def constrain_int(value:int,minValue:int,maxValue:int)-> int:
+        """Omezí hodnotu int na zadaný rozsah.
+
+        Args:
+            value (int): Hodnota k omezení.
+            minValue (int): Minimální povolená hodnota.
+            maxValue (int): Maximální povolená hodnota.
+        Returns:
+            int: Omezená hodnota.
+        """
+        if not isinstance(value,int):
+            raise ValueError("Hodnota musí být typu int.")
+        if not isinstance(minValue,int):
+            raise ValueError("minValue musí být typu int.")
+        if not isinstance(maxValue,int):
+            raise ValueError("maxValue musí být typu int.")
+        if minValue >= maxValue:
+            raise ValueError("minValue musí být menší než maxValue.")
+        if value < minValue:
+            return minValue
+        if value > maxValue:
+            return maxValue
+        return value
+    
+    @staticmethod
+    def constrain_float(value:float,minValue:float,maxValue:float)-> float:
+        """Omezí hodnotu float na zadaný rozsah.
+
+        Args:
+            value (float): Hodnota k omezení.
+            minValue (float): Minimální povolená hodnota.
+            maxValue (float): Maximální povolená hodnota.
+        Returns:
+            float: Omezená hodnota.
+        """
+        if not isinstance(value,float):
+            raise ValueError("Hodnota musí být typu float.")
+        if not isinstance(minValue,float):
+            raise ValueError("minValue musí být typu float.")
+        if not isinstance(maxValue,float):
+            raise ValueError("maxValue musí být typu float.")
+        if minValue >= maxValue:
+            raise ValueError("minValue musí být menší než maxValue.")
+        if value < minValue:
+            return minValue
+        if value > maxValue:
+            return maxValue
+        return value
+    
+    @staticmethod
+    def checkMinMax(value:float|int,minValue:float|int,maxValue:float|int,throw:bool=False)-> bool:
+        """Zkontroluje, zda je minValue menší než maxValue. Vrací True/False nebo vyhodí výjimku.
+        Args:
+            value (float|int): Hodnota k otestování.
+            minValue (float): Minimální hodnota.
+            maxValue (float): Maximální hodnota.
+            throw (bool, optional): Pokud je True, vyhodí výjimku při neúspěchu. Defaults to False.
+        Returns:
+            bool: True pokud je minValue < maxValue, jinak False.
+        """
+        try:
+            if not isinstance(minValue,(int,float)):
+                raise ValueError("minValue musí být číslo.")
+            if not isinstance(maxValue,(int,float)):
+                raise ValueError("maxValue musí být číslo.")
+            if not isinstance(value,(int,float)):
+                raise ValueError("value musí být číslo.")
+            if minValue >= maxValue:
+                if throw:
+                    raise ValueError("minValue musí být menší než maxValue.")
+                return False
+            if value < minValue or value > maxValue:
+                if throw:
+                    raise ValueError(f"value musí být mezi {minValue} a {maxValue}.")
+                return False
+            return True
+        except Exception as e:
+            if throw:
+                raise e
+            return False
