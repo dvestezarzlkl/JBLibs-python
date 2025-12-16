@@ -182,6 +182,14 @@ class lsblkDiskInfo:
             self.children = []
             
     @property
+    def isSystemDisk(self) -> bool:
+        """Vrátí True pokud je disk použit pro / nebo /boot."""
+        for mp in self.mountpoints:
+            if mp in ['/', '/boot']:
+                return True
+        return False
+            
+    @property
     def haveMountPoints(self) -> bool:
         """Vrátí True pokud má daný disk/partition nějaké mountpointy."""
         return len(self.mountpoints) > 0
