@@ -6,6 +6,7 @@ from typing import Union,Callable,Union,Tuple
 import configparser,re,psutil
 from select import select as t_sel
 from typing import List
+from dataclasses import dataclass
 
 __LoggerInit:bool=False
 __myLog:logging.Logger|None=None
@@ -699,7 +700,9 @@ def run(
     print:bool=False,
     terminalActive:bool=True
 ) -> None:
-    """Spustí příkaz, logne ho a při chybě vyhodí výjimku.
+    """
+    Pro zpětnou kompatibilitu obálka pro runRet.  
+    Spustí příkaz, logne ho a při chybě vyhodí výjimku.
     Nepřesměruje výstup, pokud je potřeba výstup zpracovat, použijte runRet.
     Takže fungují i programy jako fsck, které vyžadují interaktivní vstup.
     Args:
@@ -721,6 +724,135 @@ def run(
     if r != 0:        
         raise SystemError(f"Command failed: {cmd}\nReturn code: {r}\nOut: {o}, Error output: {e}")
     return None
+
+def __runGet(
+    cmd: Union[str, List[str]],
+    input_bytes: bytes | None = None,
+    returnAsTuple: bool = False,
+    raiseOnError: bool = False
+) -> str:
+    """
+    Spustí příkaz a vrátí jeho výstup jak stdout tak stderr spojené dohromady.
+    Pro programy co nevyžadují interaktivní vstup a vyžadujeme vrátit výstup do std
+    Args:
+        cmd (Union[str, List[str]]): Příkaz k vykonání jako seznam stringů nebo jeden string.
+        input_bytes (bytes | None): Nepovinný vstup pro příkaz jako bytes.
+        returnAsTuple (bool): Pokud je True, vrátí tuple (returncode, output, erroroutput, fulloutput).
+            Pokud je False, vrátí pouze výstup jako string = fulloutput.
+        raiseOnError (bool): Pokud je True, vyhodí SystemError při chybovém návratovém kódu.
+            False znamená, že se vrátí výstup i při chybě.
+    Returns:
+        str: fulloutput.
+            - První řádek je:
+                - 'OK:'  při return code == 0
+                - 'ERROR: nnn'  při return code != 0, kde nnn je return code příkazu
+            - Druhý řádek je při
+                - chybě výstup z stderr
+                - OK výstup z stdout
+            - 3tí řádek je při
+                - chybě výstup z stdout
+                - OK výstup z stderr pokud existuje, jinak prázdný řádek
+            - Celkově tedy:
+                - 'OK:\n{stdout}\n{stderr}'  při return code == 0
+                - 'ERROR: nnn\n{stderr}\n{stdout}'
+        
+            při return code != 0 je vrácen i chybový výstup v textu jako '\nERROR: \d+\n'  
+            'ERROR' je return code příkazu nerovnající se 0
+        tuple: (returncode, stdout, stderr, fulloutput) pokud je returnAsTuple True
+    Raises:
+        SystemError: Jen pokud příkaz selže, na errorCode se nebere ohled.
+    """
+    o,r,e = runRet(cmd, False, False, input_bytes=input_bytes)
+    x=o
+    if r != 0:
+        x = f"ERROR: {r}\n{e}\n{o}"
+    else:
+        x = f"OK:\n{o}\n" + (e if e else "")
+    if raiseOnError and r != 0:
+        raise SystemError(f"Command failed: {cmd}\nReturn code: {r}\nOut: {o}, Error output: {e}")
+        
+    if returnAsTuple:
+        return (r,o,e,x)
+    return x
+    
+def runGetStr(
+    cmd: Union[str, List[str]],
+    input_bytes: bytes | None = None,
+    raiseOnError: bool = False
+) -> str:
+    """
+    Spustí příkaz a vrátí jeho výstup jak stdout tak stderr spojené dohromady jako string.
+    Pro programy co nevyžadují interaktivní vstup a vyžadujeme vrátit výstup do std
+    Args:
+        cmd (Union[str, List[str]]): Příkaz k vykonání jako seznam stringů nebo jeden string.
+        input_bytes (bytes | None): Nepovinný vstup pro příkaz jako bytes.
+        raiseOnError (bool): Pokud je True, vyhodí SystemError při chybovém návratovém kódu.
+            False znamená, že se vrátí výstup i při chybě.
+    Returns:
+        str: fulloutput.
+            - První řádek je:
+                - 'OK:'  při return code == 0
+                - 'ERROR: nnn'  při return code != 0, kde nnn je return code příkazu
+            - Druhý řádek je při
+                - chybě výstup z stderr
+                - OK výstup z stdout
+            - 3tí řádek je při
+                - chybě výstup z stdout
+                - OK výstup z stderr pokud existuje, jinak prázdný řádek
+            - Celkově tedy:
+                - 'OK:\n{stdout}\n{stderr}'  při return code == 0
+                - 'ERROR: nnn\n{stderr}\n{stdout}'  při return code != 0
+    """
+    return __runGet(cmd, input_bytes=input_bytes, returnAsTuple=False, raiseOnError=raiseOnError)
+
+@dataclass
+class RunGetObjResult:
+    returncode: int
+    """returncode: int"""
+    stdout: str
+    """stdout: str"""
+    stderr: str
+    """stderr: str"""
+    fulloutput: str
+    """fulloutput: str
+    Kde fulloutput je str:
+        - První řádek je:
+            - 'OK:'  při return code == 0
+            - 'ERROR: nnn'  při return code != 0, kde nnn je return code příkazu
+        - Druhý řádek je při
+            - chybě výstup z stderr
+            - OK výstup z stdout
+        - 3tí řádek je při
+            - chybě výstup z stdout
+            - OK výstup z stderr pokud existuje, jinak prázdný řádek
+        - Celkově tedy:
+            - 'OK:\n{stdout}\n{stderr}'  při return code == 0
+            - 'ERROR: nnn\n{stderr}\n{stdout}'  při return code != 0
+    """
+
+def runGetObj(
+    cmd: Union[str, List[str]],
+    input_bytes: bytes | None = None,
+    raiseOnError: bool = False
+) -> RunGetObjResult:
+    """
+    Spustí příkaz a vrátí jeho výstup jak stdout tak stderr spojené dohromady jako string.
+    Pro programy co nevyžadují interaktivní vstup a vyžadujeme vrátit výstup do std
+    Args:
+        cmd (Union[str, List[str]]): Příkaz k vykonání jako seznam stringů nebo jeden string.
+        input_bytes (bytes | None): Nepovinný vstup pro příkaz jako bytes.
+        raiseOnError (bool): Pokud je True, vyhodí SystemError při chybovém návratovém kódu.
+            False znamená, že se vrátí výstup i při chybě.
+    Returns:
+        RunGetTupleResult
+    """
+    x= __runGet(cmd, input_bytes=input_bytes, returnAsTuple=True, raiseOnError=raiseOnError)
+    return RunGetObjResult(
+        returncode=x[0],
+        stdout=x[1],
+        stderr=x[2],
+        fulloutput=x[3]
+    )
 
 def runRet(
     cmd: Union[str, List[str]],
