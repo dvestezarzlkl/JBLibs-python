@@ -72,6 +72,39 @@ class onSelReturn:
         r+= ", endMenu="+str(self.endMenu)
         r+= ")"
         return r
+    
+    def errRet(self, err:str, endMenu: bool = None) -> 'onSelReturn':
+        """Nastaví chybovou hlášku a vrátí self pro řetězení
+        
+        Parameters:
+            err (str): chybová hláška
+            
+        Returns:
+            onSelReturn: vrátí self
+        """
+        self.err=err
+        if endMenu is not None:
+            self.endMenu=endMenu        
+        return self
+    
+    def okRet(self, ok:str, endMenu: bool = None) -> 'onSelReturn':
+        """Nastaví ok hlášku a vrátí self pro řetězení
+        
+        Parameters:
+            ok (str): ok hláška
+            
+        Returns:
+            onSelReturn: vrátí self
+        """
+        self.ok=ok
+        if endMenu is not None:
+            self.endMenu=endMenu
+        return self
+    
+    @property
+    def hasError(self) -> bool:
+        """Vrací True pokud je nastavena chybová hláška"""
+        return bool(self.err)
 
 class c_menu_item:
     """ Třída reprezentující jednu položku menu """

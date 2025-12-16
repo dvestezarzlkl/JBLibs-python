@@ -246,8 +246,9 @@ class fs_menu(c_menu):
         hidden: bool = False,
         itemsOnPage: int = 30,
         lockToDir: None|str|Path = None,
-        *args,
-        **kwargs
+        minMenuWidth:int|None=None,
+        filterList: Optional[Union[str, re.Pattern]] = None,
+        message:str|c_menu_block_items|list|None=None
     ) -> None:
         """Inicializace fs_menu.
         Parametry:
@@ -258,12 +259,17 @@ class fs_menu(c_menu):
             lockToDir (None|str|Path): Pokud je zadáno, bude uživatel uzamčen do tohoto adresáře a tím se z něj stane root
                 - cesta je ale vždy vrácena jako absolutní až do fyzickkého rootu systému.  
                 - Nahrazuje chRoot.
+            minMenuWidth (int|None): Minimální šířka menu.
+            filterList (Optional[Union[str, re.Pattern]]): Volitelný filtr pro názvy položek.
+            message (str|c_menu_block_items|list|None): Volitelná zpráva/y k zobrazení pod  titulkem menu.
         Raises:
             TypeError: Pokud jsou parametry v nesprávném formátu.
         
         """
         
-        super().__init__(*args, **kwargs,minMenuWidth=80)
+        super().__init__(
+            minMenuWidth=minMenuWidth
+        )
         
         if not isinstance(select, e_fs_menu_select):
             raise TypeError("select musí být e_fs_menu_select")        
@@ -289,6 +295,17 @@ class fs_menu(c_menu):
         
         self.filterDir:str|re.Pattern|bool = filterDir
         """Filtry pro soubory a adresáře."""
+        
+        self.filterList:None|re.Pattern=None
+        """Volitelný filtr pro názvy položek."""
+        
+        if filterList is not None:
+            if isinstance(filterList, str):
+                self.filterList = re.compile(filterList,re.IGNORECASE)
+            elif isinstance(filterList, re.Pattern):
+                self.filterList = filterList
+            else:
+                raise TypeError("filterItemsRgx musí být string nebo re.Pattern")
                
         self.chRoot:None|Path = None
         """Kořenový adresář pro uzamčení uživatele."""
@@ -331,6 +348,8 @@ class fs_menu(c_menu):
         self.baseTitle.append( ("Výběr "+ ("adresáře" if select is e_fs_menu_select.dir else "souboru"),"c") )
         self.baseTitle.append( (f"v.: {self._VERSION_}") )
         self.baseTitle.append( ("","Pohyb adresáři: → ←, PgUp/PgDn, Home/End") )
+        if message is not None:
+            self.baseTitle.extend( message )
         
         self.keyBind('\x1b[C', self.toAdr)
         self.keyBind('\x1b[D', self.outAdr)
@@ -356,8 +375,6 @@ class fs_menu(c_menu):
             self.pageItemsCount = 10
         elif self.pageItemsCount > 100:
             self.pageItemsCount = 100
-            
-        self.filterList:None|re.Pattern=None
         
     def checkLockDir(self, path:Path)->bool:
         """Pokud je lockDir None tak vrací True, jinak ověřuje zda je cesta v rámci lockDir.
