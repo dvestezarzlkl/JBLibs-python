@@ -3,11 +3,11 @@ from __future__ import annotations
 import bcrypt,os
 from .lng.default import * 
 from .helper import loadLng
-from .term import restoreAndClearDown,savePos,getKey,cls,reset
+from .term import restoreAndClearDown,savePos,getKey,cls,reset,text_color,en_color
 loadLng()
 
 import re, getpass
-from .c_menu import printBlock
+from .c_menu import printBlock,onSelReturn
 from typing import Union,Callable,Optional
 from .format import cliSize
 from pathlib import Path
@@ -482,12 +482,18 @@ def inputCliSize(
     clearScreen:bool=False,
     minMessageWidth:int=0
 )-> Union[cliSize,None]:
-    """Interaktivní zadání velikosti pro CLI příkazy tzn jako '512M', '1G', atd.
+    """Interaktivní zadání velikosti pro CLI příkazy tzn jako '512M', '1G', atd.  
+    **POZOR vždy zpracovává base 1024, tzn. i když zadáváme '1MB' tak to bere jako 1 MiB (1024*1024 bytes)**  
+    JEdná se o CLI nástroj a tak je to historicky takto nastaveno že 1MB = 1MiB = 1024*1024 bytes  
+    tak jak se to historicky v CLI používal a používá. Protože aktuálně se v literatuře a na webu používá  
+    MiB pro base 1024 a MB pro base 1000, ale v CLI nástrojích se to takto nepoužívá.
+    
     Args:
         minSize (int|str): Minimální velikost v bytech
         maxSize (Optional[int|str]): Maximální velikost v bytech, pokud je None, tak není omezená
-        inMiB (bool): Pokud je True, vrací velikost v MiB, jinak v bytech, platí jen pokud se zadávají
-            velikosti jako int, pokud se zadávají jako string (např. '1G'), tak se dekůduje z jednotky 
+        inMiB (bool): platí jen pokud je vstup minSize nebo maxSize int  
+            - pokud je True, tak se bere int jako MiB (base 1024)
+            - pokud je False, tak se bere int jako byty
         clearScreen (bool): Pokud je True, smaže obrazovku před zadáním.
         minMessageWidth (int): Minimální šířka zprávy.
     Returns:
@@ -495,9 +501,9 @@ def inputCliSize(
         None pokud uživatel zruší zadání.
     """
     if not isinstance(minSize, (int, str)):
-        raise ValueError("Parameter minSize must be int or str")
+        raise ValueError(TXT_INP_CLI_ERR_01)
     if maxSize is not None and not isinstance(maxSize, (int, str)):
-        raise ValueError("Parameter maxSize must be int, str or None")
+        raise ValueError(TXT_INP_CLI_ERR_02)
     
     minSize= cliSize(minSize, inMiB).inBytes
     maxSize=None if maxSize is None else cliSize(maxSize,inMiB).inBytes
@@ -525,11 +531,11 @@ def inputCliSize(
         n=cliSize(x)
         v=n.inBytes
         if v < minSize :
-            print( TXT_INP_CLI_ERR_MIN.format(minSize=cliSize(minSize),size=n) )
+            print( text_color( TXT_INP_CLI_ERR_MIN.format(minSize=cliSize(minSize),size=n) , color=en_color.RED) )
             anyKey()
             continue
         if maxSize is not None and v > maxSize:
-            print(TXT_INP_CLI_ERR_MAX.format(maxSize=cliSize(maxSize),size=n))
+            print( text_color( TXT_INP_CLI_ERR_MAX.format(maxSize=cliSize(maxSize),size=n) , color=en_color.RED) )
             anyKey()
             continue
         
@@ -541,7 +547,9 @@ def selectDir(
         hidden:bool=False,
         lockToDir: None|str|Path = None,
         minMenuWidth:int|None=None,
-        filterList:Optional[Union[str, re.Pattern]]=None
+        filterList:Optional[Union[str, re.Pattern,]]=None,
+        onShowMenuItem:Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]]=None,
+        onSelectItem:Optional[Callable[[Path],Union[onSelReturn|None|bool]]]=None,        
     )->Path|None:
     """Zobrazí dialog pro výběr adresáře.
     
@@ -554,6 +562,24 @@ def selectDir(
         minMenuWidth (int|None): Minimální šířka menu.
         filterList (Optional[Union[str, re.Pattern]]): Volitelný filtr pro názvy položek.
         message (str|list|c_menu_block_items|None): Volitelná zpráva/y k zobrazení pod titulkem menu.
+        onShowMenuItem (Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]]): Volitelná funkce pro úpravu zobrazení položky.
+            - Funkce přijímá parametry: `fn(pth:c_fs_itm, lText:str, rText:str) -> tuple[lText:str, rText:str]`
+                - pth (c_fs_itm): Položka souborového systému
+                - lText (str): Levý text položky
+                - rText (str): Pravý text položky
+            - Funkce vrací tuple s upraveným levým a pravým textem položky.
+        onSelectItem (Optional[Callable[[Path],Union[onSelReturn|None|bool]]]): Volitelná funkce pro zpracování výběru položky.
+            - Funkce přijímá parametr: `fn(Path:pth) -> Union[onSelReturn|None|bool]`
+                - pth (Path): Cesta vybrané položky
+            - Funkce vrací:
+                - onSelReturn: endMenu se ignoruje
+                    - pokud je objek ve stavu `ok` tak se menu ukončí že je vybraný item ok
+                    - pokud je objekt ve stavu `error` tak se zobrazí error s textem v err                    
+                    - používáme pokud chceme vrátit zprávu v msg nebo nahlásit error s textem v err
+                - None: Pro pokračování v menu bez změny.
+                - bool: Pokud
+                    - True, menu se ukončí výběrem položky
+                    - False, menu pokračuje bez změny.                    
     
     Returns:
         Path|None: vybraný adresář nebo None pokud bylo zrušeno.
@@ -566,7 +592,9 @@ def selectDir(
         lockToDir=lockToDir,
         minMenuWidth=minMenuWidth,
         filterList=filterList,
-        message=message
+        message=message,
+        onShowMenuItem=onShowMenuItem,
+        onSelectItem=onSelectItem
     )
     if er:=m.run() is None:
         s=m.getLastSelItem()
@@ -585,7 +613,9 @@ def selectFile(
         hidden:bool=False,
         lockToDir: None|str|Path = None,
         minMenuWidth:int|None=None,
-        filterList:Optional[Union[str, re.Pattern]]=None
+        filterList:Optional[Union[str, re.Pattern]]=None,
+        onShowMenuItem:Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]]=None,
+        onSelectItem:Optional[Callable[[Path],Union[onSelReturn|None|bool]]]=None,        
     )->Path|None:
     """Zobrazí dialog pro výběr souboru.
     
@@ -597,7 +627,25 @@ def selectFile(
             - Nahrazuje chRoot.
         minMenuWidth (int|None): Minimální šířka menu.
         filterList (Optional[Union[str, re.Pattern]]): Volitelný filtr pro názvy položek.
-    
+        onShowMenuItem (Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]]): Volitelná funkce pro úpravu zobrazení položky.
+            - Funkce přijímá parametry: `fn(itm:c_fs_itm, lText:str, rText:str) -> tuple[lText:str, rText:str]`
+                - itm (c_fs_itm): Položka souborového systému
+                - lText (str): Levý text položky
+                - rText (str): Pravý text položky
+            - Funkce vrací tuple s upraveným levým a pravým textem položky.
+        onSelectItem (Optional[Callable[[Path],Union[onSelReturn|None|bool]]]): Volitelná funkce pro zpracování výběru položky.
+            - Funkce přijímá parametr: `fn(pth:Path) -> Union[onSelReturn|None|bool]`
+                - pth (Path): Cesta vybrané položky
+            - Funkce vrací:
+                - onSelReturn: endMenu se ignoruje
+                    - pokud je objek ve stavu `ok` tak se menu ukončí že je vybraný item ok
+                    - pokud je objekt ve stavu `error` tak se zobrazí error s textem v err                    
+                    - používáme pokud chceme vrátit zprávu v msg nebo nahlásit error s textem v err
+                - None: Pro pokračování v menu bez změny.
+                - bool: Pokud
+                    - True, menu se ukončí výběrem položky
+                    - False, menu pokračuje bez změny.                    
+
     Returns:
         Path|None: vybraný soubor nebo None pokud bylo zrušeno.
     """
@@ -609,7 +657,9 @@ def selectFile(
         lockToDir=lockToDir,
         minMenuWidth=minMenuWidth,
         filterList=filterList,
-        message=message
+        message=message,
+        onShowMenuItem=onShowMenuItem,
+        onSelectItem=onSelectItem
     )
     if er:=m.run() is None:
         s=m.getLastSelItem()
