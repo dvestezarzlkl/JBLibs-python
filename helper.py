@@ -862,10 +862,15 @@ def runRet(
 ) -> Union[str, Tuple[str, int, str]]:
     """
     Spustí příkaz a vrátí jeho výstup.
+    
     Args:
         cmd (Union[str, List[str]]): Příkaz k vykonání jako seznam stringů nebo jeden string.
+            - POZOR pokud string tak se použije shell interpretace 
+            - pokud list stringů tak se použije přímo bez shell interpretace
         stdOutOnly (bool): Pokud je True, vrátí pouze stdout jako string. Pokud je False, vrátí tuple (stdout, returncode, stderr).
-        noOut (bool): Pokud je True, nepřesměruje stdout a stderr, jinak je přesměruje.
+        noOut (bool): Pokud je:  
+            - **`True`** - nepřesměruje stdout a stderr do return, vše půjde do konzole (interaktivní vstup možný).
+            - **`False`** - přesměruje vše to return hodnot, nebude nic vidět na konzoli (např. progress), interaktivní vstup nebude možný.        
         input_bytes (bytes | None): Nepovinný vstup pro příkaz jako bytes.
     Returns:
         str: stdout příkazu, pokud je stdOutOnly True.
