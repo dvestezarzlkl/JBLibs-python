@@ -241,7 +241,13 @@ class bytesTx:
         
     def __repr__(self):
         return self.__str__()
-        
+    
+    def __int__(self):
+        return self.val
+    
+    def __format__(self, format_spec):
+        return format(str(self), format_spec)
+            
 class bytesVal:
     """ reprezentuje velikost v bytech jako int ale s formátováním, tzl můžeme pracovat s převodem int(...)
     inicializace se provádí pomocí int nebo str (číslo může být s jednotkou B, K, M, G, T)
@@ -271,15 +277,24 @@ class bytesVal:
     
     def __str__(self):
         return bytesTx.encode(self.__val)
-    
+        
     def set(self, value: int):
         self.__val=value
         
     def __repr__(self):
         return self.__str__()
+    
+    def __format__(self, format_spec):
+        return format(str(self), format_spec)
 
 class cliSize:
-    """Velikost pro CLI příkazy (např. '512M', '1G', atd.)"""
+    """Velikost pro CLI příkazy (např. '512M', '1G', atd.)    
+    POZOR vždy zpracovává base 1024, tzn. i když zadáváme '1MB' tak to bere jako 1 MiB (1024*1024 bytes)
+    tak jak se to historicky v CLI používal a používá. Protože aktuálně se v literatuře a na webu používá
+    MiB pro base 1024 a MB pro base 1000, ale v CLI nástrojích se to takto nepoužívá.  
+    
+    V popisech a nápovědách bude použito MiB pro označení base 1024, ale komplet zpracování je je bez 'i' v názvu jednotky.
+    """
     
     __size_bytes:int
     __inMb:bool = False
@@ -287,7 +302,9 @@ class cliSize:
     def __init__(self, sizeStr:str, ifIntIsMiB:bool=False) -> None:
         """Inicializace velikosti z CLI formátu (např. '512M', '1G') nebo z int (v bytech nebo MiB).
         Args:
-            sizeStr (str|int): Velikost jako string (např. '512M', '1G', atd.) nebo int (v bytech nebo MiB).
+            sizeStr (str|int): Velikost jako:
+                - string (např. '512M', '1G', atd. - base 1024)
+                - nebo int (v bytech nebo MiB tzn. Mega base 1024).
             ifIntIsMiB (bool): Pokud je sizeStr int, určuje zda je to v MiB (True) nebo v bytech (False).
         """
         self.__inMb = bool(ifIntIsMiB)
@@ -302,6 +319,9 @@ class cliSize:
     @staticmethod
     def strToInt(sizeStr:str)-> int:
         """Převod velikosti z CLI formátu (např. '512M', '1G') na velikost v MiB.
+        Akceptuje i:
+            - float hodnoty např. 1.5K, 1.5M, 1.5G, 1.5T, 1.5P
+            - "MiB", "GiB", "TiB", "PiB" kde 'i' je ignorováno, protože se vždy pracuje s base 1024
         Args:
             sizeStr (str): Velikost jako string (např. '512M', '1G', atd.).
         Returns:
@@ -312,11 +332,15 @@ class cliSize:
         if not isinstance(sizeStr, str):
             raise ValueError("sizeStr musí být string.")
         sizeStr = sizeStr.strip().upper()
-        match = re.match(r"^(\d+)([MKGTPB]?)$", sizeStr)
+        match = re.match(r"^(\d+)([MKGTP]?I?B?)$", sizeStr)
         if not match:
             raise ValueError("Neplatný formát velikosti. Použijte číslo následované volitelně jednotkou (M, G, K, T, P).")
+        g2=match.group(2) or "B"
+        g2=g2.replace('I','')  # odstraníme 'i' pokud je tam
         sizeValue = int(match.group(1))
-        sizeUnit = match.group(2) or "B"
+        sizeUnit = g2 or "B"
+        if len(sizeUnit) == 2 and sizeUnit[1] == 'B':
+            sizeUnit = sizeUnit[0]
         sizeInB = sizeValue
         if sizeUnit == "B":
             sizeInB = sizeValue
@@ -341,7 +365,7 @@ class cliSize:
     
     @property
     def value(self)-> int:
-        """Vrátí velikost jako int (v MiB nebo bytech podle nastavení)."""
+        """Vrátí velikost v bytech"""
         if self.__inMb:
             return self.__size_bytes // (1024 * 1024)
         else:
@@ -373,10 +397,12 @@ class cliSize:
         return self.__size_bytes / (1024 * 1024 * 1024)
     
     @staticmethod
-    def intToStr(val:int)-> str:
+    def intToStr(val:int, show_i:bool=False)-> str:
         """Převod velikosti na CLI formát (např. '512M', '1G').
         Args:
             val (int): Velikost v bytech
+            show_i (bool): Pokud je True, přidá 'i' k jednotkám (např. 'MiB', 'GiB').
+                ale výstup je vždy base 1024. 'i' přidá jen pro označení v textech podle současných standardů.
         Returns:
             str: Velikost jako string (např. '512M', '1G', atd.).
         """
@@ -385,7 +411,10 @@ class cliSize:
             val = val // 1024
             cnt += 1
         units = ['B', 'K', 'M', 'G', 'T', 'P']
-        return f"{val}{units[cnt]}"
+        u=units[cnt]
+        if show_i and cnt > 0:
+            u += 'i'
+        return f"{val}{u}"
         
     
     def __str__(self)-> str:
@@ -398,10 +427,14 @@ class cliSize:
             return self.__size_bytes // (1024 * 1024)
         else:
             return self.__size_bytes
-        
+                
     def __repr__(self)-> str:
         """Vrátí reprezentaci objektu."""
         return f"cliSize(size={self.__size_bytes} bytes, inMiB={self.__inMb})"
+    
+    def __format__(self, format_spec)-> str:
+        """Formátování velikosti pro použití v f-string."""
+        return format(str(self), format_spec)
 
 class dateTimeFormat:
     """Formátování datetime pro různé použití (CLI, logy, atd.)"""
@@ -705,3 +738,10 @@ class currencyTx:
         """Vrátí hodnotu jako float."""
         return float(self.__val)
     
+    def __repr__(self):
+        """Vrátí reprezentaci objektu."""
+        return f"currencyTx(value={self.__val}, mena='{self.__mena}', thousands_sep='{self.__thousands_sep}', decimal_sep='{self.__decimal_sep}', precision={self.__precision}, menaPosAtEnd={self.__menaPosAtEnd})"
+    
+    def __format__(self, format_spec):
+        """Formátování měny pro použití v f-string."""
+        return format(str(self), format_spec)
