@@ -9,6 +9,10 @@ import re
 
 _old_settings = None
 
+ANSI_ESCAPE_RE: re.Pattern = re.compile(
+    r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])'
+)
+
 def savePos() -> None:
     """Uloží aktuální pozici kurzoru na obrazovce
     
@@ -252,7 +256,7 @@ def text_remove_terminal_ASCII_ESC(text:str)->str:
     Returns:
         str: text bez terminálových ASCII ESC sekvencí
     """
-    return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', text)
+    return ANSI_ESCAPE_RE.sub('', text)
 
 def text_inverse(text:str)->str:
     """ Vrátí text s inverzním zobrazením

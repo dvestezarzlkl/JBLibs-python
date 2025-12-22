@@ -215,36 +215,35 @@ class c_menu_item:
         - pokud nastavíme na '-','=','+','_' 
         tak bude oddělovací čára z tohoto znaku v délce title obálky
         """        
-        v= self._label
-        if not v:
+        v = self._label
+        
+        if not v.strip():
             return ""
+        
+        # dekorace
         if self._isTitle:
             v = f".: {v} :."
 
-        w=len(v)
-        w=max(w+2,self._minW)
-        
-        w-=len(v)
-        if w<0:
-            w=0
-        if w:
-            l=w//2
-            r=w-l
-        else:
-            l=0
-            r=0
-        
-        ch= " " if not self._isTitle else "."
-        
-        j=str(self.justifyLabel).lower()
-        if j=="r":
-            v = f"{ch*r}{v}"
-        elif j=="c":
-            v = f"{ch*l}{v}{ch*r}"
-        else:
-            v = f"{v}{ch*r}"
+        vis_len = len(text_remove_terminal_ASCII_ESC(v))
+        width = max(vis_len + 2, self._minW)
+
+        pad = width - vis_len
+        left = pad // 2
+        right = pad - left
+
+        ch = "." if self._isTitle else " "
+        j = str(self.justifyLabel).lower()
+
+        if j == "r":
+            v = f"{ch * pad}{v}"
+        elif j == "c":
+            v = f"{ch * left}{v}{ch * right}"
+        else:  # left
+            v = f"{v}{ch * pad}"
+
         if self._isTitle and self.isTitleInverse:
             v = text_inverse(v)
+
         return v
     
     @label.setter
@@ -632,7 +631,7 @@ class c_menu:
         ret (other): nic neovlivní a pokračuje se v ukončení menu
     """
 
-    choiceBack: c_menu_item = c_menu_item(TXT_BACK, "b", lambda i: onSelReturn(endMenu=True), "")
+    choiceBack: c_menu_item = c_menu_item( text_color(TXT_BACK,color=en_color.BRIGHT_BLACK), "b", lambda i: onSelReturn(endMenu=True), "")
     """ Položka menu pro návrat z menu, pokud nechceme zobrazit nastavíme na None """
 
     ESC_is_quit:bool=True
@@ -643,7 +642,7 @@ class c_menu:
     minMenuWidth:int=0
     """Minimální šířka menu, pokud je nastaveno tak se menu nezmenší pod tuto hodnotu"""
 
-    choiceQuit: c_menu_item = c_menu_item(TXT_QUIT, "q", lambda i: exit(0), "")
+    choiceQuit: c_menu_item = c_menu_item( text_color(TXT_QUIT,color=en_color.BRIGHT_BLACK), "q", lambda i: exit(0), "")
     """ Položka menu pro ukončení programu, pokud nechceme zobrazit nastavíme na None """
 
     setInputMessageWitthToLastCalc:bool=True
@@ -765,7 +764,7 @@ class c_menu:
         if self.choiceBack and  not self.ESC_is_quit:
             e.append(self.choiceBack)
         if self.ESC_is_quit:
-            e.append(c_menu_item(TXT_ESC_isExit))
+            e.append(c_menu_item(text_color(TXT_ESC_isExit,color=en_color.BRIGHT_BLACK)))
         if self.choiceQuit:
             e.append(self.choiceQuit)
             
