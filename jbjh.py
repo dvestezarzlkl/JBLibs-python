@@ -193,6 +193,22 @@ class JBJH:
                 raise ValueError(f"Hodnota '{s}' není typu bytes.")
             return None
         
+    def is_callable(s: any,throw:bool=False)-> Union[callable,None]:
+        """Zkontroluje, zda je hodnota typu callable.
+
+        Args:
+            s (any): Hodnota k otestování.
+            throw (bool, optional): Pokud je True, vyhodí výjimku při neúspěchu. Defaults to False.
+        Returns:
+            Union[callable,None]: Vrací callable, pokud je hodnota typu callable, jinak None.
+        """
+        if callable(s):
+            return s
+        else:
+            if throw:
+                raise ValueError(f"Hodnota není typu callable.")
+            return None
+        
     @staticmethod
     def is_intArray(s: any,returnAsString:bool=True,throw:bool=False)-> Union[bytearray,None]:
         """Zkontroluje, zda je hodnota typu bytearray.
