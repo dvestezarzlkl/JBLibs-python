@@ -12,6 +12,7 @@ from typing import Union,Callable,Optional
 from .format import cliSize
 from pathlib import Path
 from .fs_helper import fs_menu,e_fs_menu_select,c_fs_itm
+from .jbjh import JBJH
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -82,7 +83,7 @@ def get_username(messagePrefix:None, make_cls: bool=False, maxLength:int=50, min
 def get_input(
         action: str,
         accept_empty: bool = False,
-        rgx:Union[re.Pattern,Callable]=None, # např re.compile(r'\d+')
+        rgx:Union[re.Pattern,Callable,str]=None, # např re.compile(r'\d+')
         maxLen=0,
         clearScreen:bool=False,
         errTx:str=TXT_SSMD_ERR18,
@@ -95,7 +96,7 @@ def get_input(
     Parameters:
         action (str): text který se zobrazí uživateli
         accept_empty (bool) (False): pokud je True, tak je povolen prázdný vstup
-        rgx (Union[re.Pattern,Callable]) (None): regulární výraz nebo funkce pro validaci vstupu,
+        rgx (Union[re.Pattern,Callable,str]) (None): regulární výraz nebo funkce pro validaci vstupu,
             funkce má syntaxi: `def funkce(vstup:str)->bool`        
         maxLen (int) (0): maximální délka vstupu
         clearScreen (bool) (False): pokud je True, tak se před zadáním smaže obrazovka
@@ -108,6 +109,23 @@ def get_input(
             - str: pokud je zadán vstup a je validní
             - None: pokud je zadáno 'q'
     """
+    if not isinstance(action, str):
+        raise ValueError("Parameter action must be string")
+    if not isinstance(errTx, str):
+        raise ValueError("Parameter errTx must be string")
+    if not isinstance(titleNote, str):
+        raise ValueError("Parameter titleNote must be string")
+    if not isinstance(rgx, (re.Pattern, Callable, str)) and rgx is not None:
+        raise ValueError("Parameter rgx must be re.Pattern or callable function")
+    if isinstance(rgx, str):
+        rgx=re.compile(rgx)
+    if (clearScreen := JBJH.is_bool(clearScreen)) is None:
+        raise ValueError("Parameter clearScreen must be bool")
+    if (maxLen := JBJH.is_int(maxLen)) is None or maxLen < 0:
+        raise ValueError("Parameter maxLen must be non-negative integer")
+    if (minMessageWidth := JBJH.is_int(minMessageWidth)) is None or minMessageWidth < 0:
+        raise ValueError("Parameter minMessageWidth must be non-negative integer")
+    
     if not minMessageWidth:
         minMessageWidth=_minMessageWidth    
     
@@ -119,6 +137,7 @@ def get_input(
     if clearScreen:
         cls()
         
+    reset()
     print("\033[s", end="") # uložení pozice kurzoru
     try:
         while True:
@@ -127,7 +146,7 @@ def get_input(
             
             printBlock(i, s, eof=True,min_width=minMessageWidth)
             if err:
-                print(err)
+                print(text_color(err, color=en_color.RED, bold=True,inverse=True))
                 print("")
                 err=""
 
@@ -138,24 +157,16 @@ def get_input(
                 return None
             if accept_empty and inputText == "":
                 return ""
-            if len(inputText) > 0 and (
-                rgx is None or 
-                (isinstance(rgx, re.Pattern) and re.match(rgx, inputText)) or 
-                (callable(rgx) and rgx(inputText) is True)
-            ) and (
-                maxLen == 0 or len(inputText) <= maxLen
-            ):
-                return inputText
-            else:
-                if isinstance(rgx,re.Pattern) and not re.match(rgx, inputText):
-                    err = errTx
-                elif callable(rgx) and rgx(inputText) is False:
-                    err = errTx
-                elif maxLen > 0 and len(inputText) > maxLen:
-                    err = TXT_LEN_ERR.format(maxLen=maxLen)
-                else:
-                    err = TXT_INPUT_ERR
-                print(err)
+            
+            if maxLen == 0 or len(inputText) <= maxLen:
+                if isinstance(rgx, re.Pattern):
+                    if re.match(rgx, inputText):
+                        return inputText
+                elif callable(rgx):
+                    if rgx(inputText) is True:
+                        return inputText
+                    
+            err = errTx
     finally:
         restoreAndClearDown()
 
