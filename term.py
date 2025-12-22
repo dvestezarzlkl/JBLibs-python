@@ -315,9 +315,21 @@ def text_color(text:str, color:en_color, removeInnerColors:bool=False, inverse:b
         str: text obalený zvolenou barvou
     """
     if removeInnerColors:
-        text = re.sub(r'\033\[[0-9;]*m', '', text)
+        text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+
+    prefix = ""
+    suffix = ""
+
     if bold:
-        text = f"\033[1m{text}\033[0m"    
+        prefix += "\033[1m"
+        suffix = "\033[22m" + suffix   # vypne jen bold
+
     if inverse:
-        return f"\033[7m{color.value}{text}{en_color.RESET.value}\033[0m"
-    return f"{color.value}{text}{en_color.RESET.value}"
+        prefix += "\033[7m"
+        suffix = "\033[27m" + suffix   # vypne jen inverse
+
+    if color:
+        prefix += color.value
+        suffix = "\033[39m" + suffix   # reset jen foreground barvy
+
+    return f"{prefix}{text}{suffix}"
