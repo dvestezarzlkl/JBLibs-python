@@ -7,6 +7,7 @@ import configparser,re,psutil
 from select import select as t_sel
 from typing import List
 from dataclasses import dataclass
+from pathlib import Path
 
 __LoggerInit:bool=False
 __myLog:logging.Logger|None=None
@@ -466,7 +467,53 @@ def is_numeric(value)->bool:
     """
     return isinstance(value, (int, float, complex))
 
-def load_config()->None:
+def getConfigPath(
+        fromEtc: bool = False,
+        configName: str = "config.ini",
+        appName: str = None,
+        createIfNotExist: bool = False
+    )->Path:
+    """Získá cestu ke konfiguračnímu souboru config.ini
+    Parameters:
+        fromEtc (bool): pokud je True, cesta bude /etc/appName/config.ini
+            pokud neexistuje adresář v etc tak se vytvoří, pokud je `createIfNotExist` True
+        configName (str): jméno konfiguračního souboru
+        appName (str): jméno aplikace, použije se pokud fromEtc je True
+        createIfNotExist (bool): pokud je True a cesta z fromEtc neexistuje, vytvoří se
+    Returns:
+        Path: cesta ke konfiguračnímu souboru
+    Raises:
+        ValueError: pokud appName není zadáno když fromEtc je True
+    """
+    log=getMyLog()
+    # Získat cestu ke složce, kde je hlavní skript spuštěn
+    if fromEtc:
+        if not isinstance(appName,str) or not appName.strip():
+            raise ValueError("appName must be a non-empty string when fromEtc is True.")
+        if not appName.startswith('jb_'):
+            appName='jb_'+appName
+        if appName.count('/')>0:
+            raise ValueError("appName must not contain path separators ('/').")
+        script_dir = Path("/etc") / appName
+        if createIfNotExist and not script_dir.exists():
+            try:
+                script_dir.mkdir(parents=True, exist_ok=True)
+                log.info(f"Created config directory '{script_dir}'.")
+            except Exception as e:
+                log.error(f"Could not create config directory '{script_dir}': {e}")
+                raise
+    else:
+        script_dir = Path(os.getcwd())
+        
+    config_path = script_dir / configName
+    return config_path
+        
+
+def load_config(
+        fromEtc: bool = False,
+        configName: str = "config.ini",
+        appName: str = None
+    )->None:
     """Načte konfigurační soubor config.ini z adresáře, kde je spuštěn hlavní skript
     a přepíše globální proměnné v modulu cfg.py
 
@@ -478,38 +525,62 @@ def load_config()->None:
     """
     log=getMyLog()
     # Získat cestu ke složce, kde je hlavní skript spuštěn
-    script_dir = os.getcwd()
-    config_path = os.path.join(script_dir, "config.ini")
+    config_path = getConfigPath(
+        fromEtc=fromEtc,
+        configName=configName,
+        appName=appName,
+        createIfNotExist=True
+    )
 
     # Načíst a přepsat globální proměnné, pokud soubor existuje
     config = configparser.ConfigParser()
     config.optionxform = str # zachovat původní velikost písmen klíčů
-    if os.path.exists(config_path):
-        config.read(config_path)                
-        if 'globals' in config:            
-            frame_stack = inspect.stack()
-            if len(frame_stack) < 2:
-                log.warning("There is not enough stack depth to get the calling module.")
-                return
+    if not config_path.exists():            
+        ok=False
+        if fromEtc:
+            print(f"[ERROR] Config file '{config_path}' not found.", file=sys.stderr)
+            appPath = getConfigPath(
+                fromEtc=False,
+                configName=configName,
+                appName=appName,
+                createIfNotExist=False
+            )
+            if appPath.exists():
+                from .input import confirm
+                print(f"[INFO] Config found in application directory '{appPath}'.")
+                if confirm(f"Do you want to move config file from '{appPath}' to '{config_path}'? (y/n): "):
+                    try:
+                        os.rename(appPath, config_path)
+                        print(f"[INFO] Config file moved to '{config_path}'.")
+                        ok=True
+                    except OSError as e:
+                        print(f"[ERROR] Could not move config file: {e}", file=sys.stderr)
+        if not ok:
+            print(f"[ERROR] Config file '{config_path}' not found.", file=sys.stderr)
+            exit(1)
 
-            frame = frame_stack[1]
-            if len(frame) < 1:
-                log.warning("There is not enough stack depth to get the calling module.")
-                return
-            # otestujeme že caller je config, protože je určen jen pro něj, tzn cfg.py
-            if not frame.filename.endswith('/cfg.py'):
-                raise FileNotFoundError(f"Only cfg.py can call load_config().")
+    config.read(config_path)                
+    if 'globals' in config:            
+        frame_stack = inspect.stack()
+        if len(frame_stack) < 2:
+            log.warning("There is not enough stack depth to get the calling module.")
+            return
 
-            caller_module = inspect.getmodule(frame[0])
+        frame = frame_stack[1]
+        if len(frame) < 1:
+            log.warning("There is not enough stack depth to get the calling module.")
+            return
+        # otestujeme že caller je config, protože je určen jen pro něj, tzn cfg.py
+        if not frame.filename.endswith('/cfg.py'):
+            raise FileNotFoundError(f"Only cfg.py can call load_config().")
 
-            if caller_module is None:
-                log.warning("Cannot determine the calling module.")
-                return
-            vars = {key: parse_ini_value(config['globals'][key].strip('"')) for key in config['globals']}
-            __updateGlob(caller_module,vars)
-            
-    else:
-        raise FileNotFoundError(f"Config file '{config_path}' not found.")
+        caller_module = inspect.getmodule(frame[0])
+
+        if caller_module is None:
+            log.warning("Cannot determine the calling module.")
+            return
+        vars = {key: parse_ini_value(config['globals'][key].strip('"')) for key in config['globals']}
+        __updateGlob(caller_module,vars)
     
     
 def parse_ini_value(value:str)->Union[int,float,str,None]:
