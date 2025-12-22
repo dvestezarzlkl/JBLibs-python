@@ -136,10 +136,11 @@ class lsblkDiskInfo:
         fstype:str,
         type:str,
         uuid:str,
-        partuuid:str,        
+        partuuid:str,
         mountpoints:Union[List[str]],
         parent:Optional[str]=None,
-        children:List['lsblkDiskInfo']=[]
+        children:List['lsblkDiskInfo']=[],
+        ptuuid:str="",
     ):
         self.name: str = name
         """Název disku/partition (např. sda, sda1)"""
@@ -154,10 +155,19 @@ class lsblkDiskInfo:
         """Typ filesystému (např. ext4, ntfs)"""
         
         self.uuid: str = uuid
-        """UUID disku/partition"""
+        """UUID disku/partition  
+        identifikátor partition v rámci filesystému
+        """
         
         self.partuuid: str = partuuid
-        """PARTUUID disku/partition"""
+        """PARTUUID disku/partition  
+        identifikátor partition v rámci GPT tabulky
+        """
+        
+        self.ptuuid: str = ptuuid
+        """PTUUID disku/partition 
+        tímto lze identifikovat disky s GPT tabulkou pro každou partition je stejný ptuuid
+        """
         
         self.mountpoints : List[str] = mountpoints
         """Seznam mountpointů disku/partition"""
@@ -252,6 +262,7 @@ def __lsblk_process_node(node:dict,parent:Optional[lsblkDiskInfo]=None,) -> Opti
             fstype=node.get('fstype', ''),
             uuid=node.get('uuid', ''),
             partuuid=node.get('partuuid', ''),
+            ptuuid=node.get('ptuuid', ''),
             mountpoints=node.get('mountpoints', []),
             parent=parent.name if parent else None,
             children=[]
@@ -393,7 +404,7 @@ def lsblk_list_disks(
         
     # lsblk -no NAME,LABEL,SIZE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS --json
     out = subprocess.run(
-        ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS"],
+        ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS,PTUUID"],
         capture_output=True, text=True
     )
     data = json.loads(out.stdout)
