@@ -9,7 +9,8 @@ from typing import List, Union, Dict
 from datetime import datetime
 from dateutil.parser import parse as parser_parse
 from .format import strTime,strTimeUSec,bytesVal,bytesTx
-
+from .term import en_color,text_color
+from .jbjh import JBJH
 
 class c_unitsRetRow:
     """ slouží pro zobrazení výsledků z show"""
@@ -665,11 +666,12 @@ class c_unit:
             
         return status.UnitFileState
     
-    def fullStatus(self,asInt:bool=False,status=None) -> Union[str,int]:
+    def fullStatus(self,asInt:bool=False,status=None,coloring:bool=False) -> Union[str,int]:
         """ vrátí stav služby 
         
         Parameters:
             asInt (bool): pokud je True, vrátí číslo, jinak textový popis
+            coloring (bool): pokud je True, vrátí barevný textový popis
             
         Returns:
             Union[str,int]: popis stavu služby
@@ -677,7 +679,12 @@ class c_unit:
                 - 1/11 = RUNNING, 0/10 = STOPPED
                 - >9 = ENABLED, <10 = DISABLED
                 - 99 = NOT EXISTS
-        """ 
+        """
+        if (asInt:=JBJH.is_bool(asInt)) is None:
+            asInt=False
+        if (coloring:=JBJH.is_bool(coloring)) is None:
+            coloring=False
+                     
         r=0
         rtx=[]
         if status is None:
@@ -688,15 +695,27 @@ class c_unit:
         if not self.exists():
             return TXT_STATUS_NEX if not asInt else 99
         if self.running(status):
-            rtx.append(TXT_STATUS_RUN)
+            t=TXT_STATUS_RUN
+            if coloring:
+                t=text_color(t,en_color.GREEN)
+            rtx.append(t)
             r+=1
         else:
-            rtx.append(TXT_STATUS_STP)
+            t=TXT_STATUS_STP
+            if coloring:
+                t=text_color(t,en_color.RED)
+            rtx.append(t)
         if self.enabled(status):
-            rtx.append(TXT_STATUS_ENA)
+            t=TXT_STATUS_ENA
+            if coloring:
+                t=text_color(t,en_color.GREEN)
+            rtx.append(t)
             r=10
         else:
-            rtx.append(TXT_STATUS_DIS)
+            t=TXT_STATUS_DIS
+            if coloring:
+                t=text_color(t,en_color.RED)
+            rtx.append(t)
         return ", ".join(rtx) if not asInt else r
     
     def running(self,status=None) -> bool:
