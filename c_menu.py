@@ -7,7 +7,7 @@ loadLng()
 
 from typing import Callable, Any, Union, List, Tuple
 import traceback
-from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC,cls
+from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC,cls, text_color, en_color
 from .helper import constrain
 from time import sleep
 
@@ -368,12 +368,19 @@ class c_menu_block_items:
     def __init__(
         self,
         items:List[Union[str,Tuple[str,str],'c_menu_block_items']]=None,
-        rightBrackets:None|str|bool=None
+        rightBrackets:None|str|bool=None,
+        blockColor:Union[en_color,None]=None,
+        blockInverse:bool=False,
     ):
         self.rightBrackets = rightBrackets
         self._l=[]
+        self.blockColor=blockColor if isinstance(blockColor,en_color) else None
+        self.blockInverse=bool(blockInverse)
+        
+                
         if items:
             self.extend(items)
+        
     """ Inicializace c_menu_block_items
     Parameters:
         items (List[Union[str,Tuple[str,str],'c_menu_block_items']]): položky k přidání do bloku menu
@@ -463,6 +470,8 @@ class c_menu_block_items:
         elif isinstance(items,c_menu_block_items):
             self._l.extend(items._l)
             self.__rightBrackets=items.rightBrackets
+            self.blockColor=items.blockColor
+            self.blockInverse=items.blockInverse
             return self
         elif isinstance(items,str):
             self._l.append((items,""))
@@ -891,6 +900,17 @@ class c_menu:
         return "",""
     
     @staticmethod
+    def ansi_center(s: str, width: int) -> str:
+        """Center pro ANSI text (neničí barvy)."""
+        real_len = len(text_remove_terminal_ASCII_ESC(s))
+        if real_len >= width:
+            return s
+        
+        total_pad = width - real_len
+        left = total_pad // 2
+        right = total_pad - left
+        return (" " * left) + s + (" " * right)    
+    @staticmethod
     def processList(
         lst: c_menu_block_items,
         onlyOneColumn: bool = False,
@@ -898,6 +918,8 @@ class c_menu:
         rightTxBrackets: str|bool = "(", # podpora False=vypnuto - "", "(", "[", "{", ":" a "-"
         minWidth: int = 0,
         linePrefix:str='', # může být například '- '
+        lineColor: Union[en_color, None] = None,
+        lineInverse=False,
     )-> Tuple[List[str],int]: # list položek a max délku řádku        
         spaceBetweenTexts = constrain(spaceBetweenTexts, 3, 100)
 
@@ -907,6 +929,12 @@ class c_menu:
         if not isinstance(lst, c_menu_block_items):
             raise ValueError(TXT_CMENU_ERR02)
         
+        if lineColor is None and lst.blockColor is not None:
+            lineColor = lst.blockColor
+        
+        if lst.blockInverse is True:
+            lineInverse = True
+                
         lst=lst()
 
         # nastavíme levou a pravou stranu závorek
@@ -924,9 +952,9 @@ class c_menu:
             
             if center:
                 # pokud je požadováno centrování, tak nastavíme pravý text na prázdný a provedeme centrování
-                max_len = max(len(line) for line in i_l)
+                max_len = max(len(text_remove_terminal_ASCII_ESC(line)) for line in i_l)
                 max_len = max(max_len, minWidth)
-                i_l = [ line.center(max_len) for line in i_l ]
+                i_l = [ c_menu.ansi_center(line, max_len) for line in i_l ]
                 i_r = [''] * len(i_l)
             else:
                 # dorovnej délky polí
@@ -1004,7 +1032,11 @@ class c_menu:
                 # jen pravý text
                 # dorovnáme mezerami zleva
                 ret.append( (" " * (width-len(r))) + i[1])
-                                
+                         
+        if lineColor is not None:
+            ret = [ text_color(line, lineColor) for line in ret ]
+        if lineInverse:
+            ret = [ text_inverse(line) for line in ret ]
         return ret, width
 
     @staticmethod
@@ -1018,7 +1050,8 @@ class c_menu:
         space_between_texts: int = 3,
         min_width: int = 0,
         rightTxBrackets: str = "(",
-        outToList:list=None
+        outToList:list=None,
+        lineColor: Union[en_color, None] = None,
     ) -> int:
         """
         Vytiskne blok textu s ohraničením nebo bez, podle volby
@@ -1056,6 +1089,9 @@ class c_menu:
         title_items = c_menu_block_items(title_items)
         subTitle_items = c_menu_block_items(subTitle_items)
         
+        if not isinstance(lineColor, (en_color, type(None))):
+            raise ValueError("Invalid format of lineColor")
+        
         # Sanitizace vstupů
         charObal = charObal[0] if isinstance(charObal, str) and charObal else ""
         leftRightLength = constrain(leftRightLength,0,10) if isinstance(leftRightLength, int) else 0
@@ -1082,7 +1118,8 @@ class c_menu:
                 onlyOneColumn=False,
                 linePrefix=charSubtitle+" ",
                 minWidth=width,
-                rightTxBrackets=subTitle_items.rightBrackets if subTitle_items.rightBrackets is not None else rightTxBrackets
+                rightTxBrackets=subTitle_items.rightBrackets if subTitle_items.rightBrackets is not None else rightTxBrackets,
+                lineColor=lineColor
             )[1]
         )
         pass
@@ -1092,7 +1129,8 @@ class c_menu:
             onlyOneColumn=False,
             spaceBetweenTexts=space_between_texts,
             minWidth=width,
-            rightTxBrackets=title_items.rightBrackets if title_items.rightBrackets is not None else rightTxBrackets
+            rightTxBrackets=title_items.rightBrackets if title_items.rightBrackets is not None else rightTxBrackets,
+            lineColor=lineColor
         )
         width = max(width, processed_title_items[1])
         processed_title_items = processed_title_items[0]
@@ -1103,7 +1141,8 @@ class c_menu:
             onlyOneColumn=False,
             linePrefix=charSubtitle+" ",
             minWidth=width,
-            rightTxBrackets=rightTxBrackets
+            rightTxBrackets=rightTxBrackets,
+            lineColor=lineColor
         )
         width = max(width, processed_subTitle_items[1])
         processed_subTitle_items = processed_subTitle_items[0]
@@ -1254,11 +1293,11 @@ class c_menu:
             if self.afterMenu:
                 width = max(width, self.printBlok(afterMenu, [], "", 0, "", False, min_width=width, outToList=out))
                 
-            if lastRet:
+            if lastRet and isinstance(lastRet, onSelReturn):
                 if lastRet.err:
-                    width = max(width, self.printBlok([TXT_ERR, lastRet.err], [], "!", 3, "", False,min_width=width , outToList=out))
+                    width = max(width, self.printBlok([TXT_ERR, lastRet.err], [], "!", 3, "", False,min_width=width , outToList=out, lineColor=en_color.BRIGHT_RED))
                 if lastRet.ok:
-                    width = max(width, self.printBlok([TXT_NFO, lastRet.ok], [], "-", 3, "", False,min_width=width, outToList=out))
+                    width = max(width, self.printBlok([TXT_NFO, lastRet.ok], [], "-", 3, "", False,min_width=width, outToList=out, lineColor=en_color.BRIGHT_GREEN))
         
         # inverze přes escape pokud >
         for i in range(len(out)):
@@ -1391,7 +1430,7 @@ class c_menu:
             
         ok=True
         if len(err)>0:
-            out.extend(err)            
+            out.extend(err)
             ok=False
         
         # \033[H - nastaví kurzor na začátek obrazovky
@@ -1569,7 +1608,9 @@ class c_menu:
                     # detekováno submenu, zpracuj
                     cls()
                     log.debug(f"Sub menu '{item.label}' started ---")
-                    e=item.onSelect.run(item)
+                    m:c_menu = item.onSelect
+                    m.minMenuWidth = max(m.minMenuWidth,self._lastCalcMenuWidth)
+                    e=m.run(item)
                     first=True # po návratu je to vpodstatě také první načtení menu
                     # zpracuj návratovou hodnotu ze submenu
                     if isinstance(e,str):
