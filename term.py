@@ -1,3 +1,4 @@
+import enum
 import os
 import sys
 import termios
@@ -274,3 +275,49 @@ def cls(_flush:bool=True)->None:
     print("\033[2J\033[H", end="",flush=_flush)
     # \033[2J - Vymaže obrazovku
     # \033[H - Posune kurzor na začátek obrazovky
+
+class en_color(enum.Enum):
+    """ Barvy pro text v terminálu pomocí ANSI kódů """
+    
+    RESET = "\033[0m"
+    BLACK = "\033[30m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    REVERSED = "\033[7m"
+    # jasnější barvy
+    BRIGHT_BLACK = "\033[90m"
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
+    
+def text_color(text:str, color:en_color, removeInnerColors:bool=False, inverse:bool=False, bold:bool=False)->str:
+    """ Vrátí text obalený ANSI kódy pro zvolenou barvu
+    pokud text nějakou barvu již obsahuje a removeInnerColors je True,
+    tak tyto barvy odstraní před obalením novou barvou.
+    Parameters:
+        text (str): text pro obalení barvou
+        color (en_color): barva pro obalení textu
+        removeInnerColors (bool, optional): (False) pokud True, odstraní vnitřní barvy z textu
+        inverse (bool, optional): (False) pokud True, použije inverzní barvu
+        bold (bool, optional): (False) pokud True, použije tučný text
+    Returns:
+        str: text obalený zvolenou barvou
+    """
+    if removeInnerColors:
+        text = re.sub(r'\033\[[0-9;]*m', '', text)
+    if bold:
+        text = f"\033[1m{text}\033[0m"    
+    if inverse:
+        return f"\033[7m{color.value}{text}{en_color.RESET.value}\033[0m"
+    return f"{color.value}{text}{en_color.RESET.value}"
