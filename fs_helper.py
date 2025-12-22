@@ -5,10 +5,11 @@ from typing import List
 from dataclasses import dataclass,field
 from enum import Enum
 from .c_menu import c_menu,c_menu_item,onSelReturn,c_menu_block_items
-from .term import text_inverse
+from .term import text_inverse,en_color,text_color
 from .format import bytesTx
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Union, Callable
+from .jbjh import JBJH
 
 """
 Modul pro pomocné funkce související se souborovým systémem.
@@ -107,11 +108,12 @@ class e_fs_menu_select(Enum):
     file=2
 
 def getDir(
-    dir: str|Path,
-    filterFile: str|re.Pattern|bool = True,
-    filterDir:str|re.Pattern|bool=True,
-    current_dir: str|Path|None = None,
-    hidden: bool = False
+    dir: Union[str|Path],
+    filterFile: Union[str|re.Pattern|bool|Callable] = True,
+    filterDir:Union[str|re.Pattern|bool|Callable]=True,
+    current_dir: Union[str|Path|None] = None,
+    hidden: bool = False,
+    nameFilter: Optional[Union[str, re.Pattern, callable]] = None,
 ) -> tuple[Path, List[c_fs_itm]]:
     """
     Vrátí seznam souborů a adresářů v zadaném adresáři.
@@ -126,6 +128,11 @@ def getDir(
             str - regexp filtr pro názvy adresářů
             False - nezahrnovat adresáře
             True - zahrnout všechny adresáře
+            callable - funkce která přijímá Path položky a vrací True/False, lze použít pro složitější filtry, např když chceme
+                        ověřit že v adresáři něco existuje
+        nameFilter (Optional[Union[str, re.Pattern, callable]]): Volitelný filtr pro názvy položek. Pochází z filtru 'f'
+            - str - regexp pro filtrování názvů položek
+            - re.Pattern - regexp pro filtrování názvů položek            
         current_dir (str|Path|None): výchozí adresář pokud je relativní cesta
         hidden (bool): zda zahrnout skryté soubory (začínající tečkou)
             True - zahrnout
@@ -141,9 +148,9 @@ def getDir(
     """
     if not isinstance(dir, (str, Path)):
         raise TypeError("dir musí být string nebo Path")
-    if not isinstance(filterFile, (str, bool, re.Pattern)):
+    if not isinstance(filterFile, (str, bool, re.Pattern, Callable)):
         raise TypeError("filterFile musí být string bool nebo re.Pattern")
-    if not isinstance(filterDir, (str, bool, re.Pattern)):
+    if not isinstance(filterDir, (str, bool, re.Pattern, Callable)):
         raise TypeError("filterDir musí být string bool nebo re.Pattern")
     if isinstance(current_dir, str):
         current_dir = Path(current_dir).resolve()
@@ -176,6 +183,8 @@ def getDir(
     
     flRgx:None|re.Pattern = None
     dirRgx:bool|re.Pattern = None
+    nmFilterRgx:None|re.Pattern = None
+    
     if filterFile is False:
         flRgx = False
     elif isinstance(filterFile, str):
@@ -190,6 +199,16 @@ def getDir(
     else:
         dirRgx = filterDir
 
+    if nameFilter is not None:
+        if isinstance(nameFilter, str):
+            nmFilterRgx = re.compile(nameFilter,re.IGNORECASE)
+        elif isinstance(nameFilter, re.Pattern):
+            nmFilterRgx = nameFilter
+        elif callable(nameFilter):
+            nmFilterRgx = nameFilter
+        else:
+            raise TypeError("nameFilter musí být string nebo re.Pattern nebo callable")
+
     # projdi adresář
     for entry in base.iterdir():
         name = entry.name
@@ -202,6 +221,10 @@ def getDir(
                 continue
             if isinstance(flRgx, re.Pattern) and flRgx.search(name) is None:
                 continue
+            if callable(flRgx):
+                if not flRgx(entry):
+                    continue
+                
         if entry.is_dir():
             if not hidden and name.startswith("."):
                 continue            
@@ -209,6 +232,18 @@ def getDir(
                 continue
             if isinstance(dirRgx, re.Pattern) and dirRgx.search(name) is None:
                 continue
+            if callable(dirRgx):
+                if not dirRgx(entry):
+                    continue
+
+        # filtrace podle nameFilter
+        if nmFilterRgx is not None:
+            if isinstance(nmFilterRgx, re.Pattern):
+                if nmFilterRgx.search(name) is None:
+                    continue
+            elif callable(nmFilterRgx):
+                if not nmFilterRgx(entry):
+                    continue
 
         stat = entry.stat()
         ext = entry.suffix.lower() if entry.is_file() else ""
@@ -247,8 +282,10 @@ class fs_menu(c_menu):
         itemsOnPage: int = 30,
         lockToDir: None|str|Path = None,
         minMenuWidth:int|None=None,
-        filterList: Optional[Union[str, re.Pattern]] = None,
-        message:str|c_menu_block_items|list|None=None
+        filterList: Optional[Union[str, re.Pattern, callable]] = None,
+        message:str|c_menu_block_items|list|None=None,
+        onShowMenuItem:Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]]=None,
+        onSelectItem:Optional[Callable[[Path],Union[onSelReturn|None|bool]]]=None,
     ) -> None:
         """Inicializace fs_menu.
         Parametry:
@@ -260,8 +297,31 @@ class fs_menu(c_menu):
                 - cesta je ale vždy vrácena jako absolutní až do fyzickkého rootu systému.  
                 - Nahrazuje chRoot.
             minMenuWidth (int|None): Minimální šířka menu.
-            filterList (Optional[Union[str, re.Pattern]]): Volitelný filtr pro názvy položek.
+            filterList (Optional[Union[str, re.Pattern, callable]]): Volitelný filtr pro názvy položek.
+                - str - regexp pro filtrování názvů položek
+                - re.Pattern - regexp pro filtrování názvů položek
+                - callable - funkce která přijímá Path položky a vrací True/False, lze použít pro složitější filtry, např když chceme
+                        ověřit že v adresáři něco existuje
             message (str|c_menu_block_items|list|None): Volitelná zpráva/y k zobrazení pod  titulkem menu.
+            onShowMenuItem (Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]]): Volitelná funkce pro úpravu zobrazení položky.
+                - Funkce přijímá parametry: `fn(pth:c_fs_itm, lText:str, rText:str) -> tuple[lText:str, rText:str]`
+                    - pth (c_fs_itm): Položka souborového systému
+                    - lText (str): Levý text položky
+                    - rText (str): Pravý text položky
+                - Funkce vrací tuple s upraveným levým a pravým textem položky.
+            onSelectItem (Optional[Callable[[Path],Union[onSelReturn|None|bool]]]): Volitelná funkce pro zpracování výběru položky.
+                - Funkce přijímá parametr: `fn(Path:pth) -> Union[onSelReturn|None|bool]`
+                    - pth (Path): Cesta vybrané položky
+                - Funkce vrací:
+                    - onSelReturn: endMenu se ignoruje
+                        - pokud je objek ve stavu `ok` tak se menu ukončí že je vybraný item ok
+                        - pokud je objekt ve stavu `error` tak se zobrazí error s textem v err                    
+                        - používáme pokud chceme vrátit zprávu v msg nebo nahlásit error s textem v err
+                    - None: Pro pokračování v menu bez změny.
+                    - bool: Pokud
+                        - True, menu se ukončí výběrem položky
+                        - False, menu pokračuje bez změny.                    
+
         Raises:
             TypeError: Pokud jsou parametry v nesprávném formátu.
         
@@ -296,17 +356,23 @@ class fs_menu(c_menu):
         self.filterDir:str|re.Pattern|bool = filterDir
         """Filtry pro soubory a adresáře."""
         
-        self.filterList:None|re.Pattern=None
+        self.filterList:None|re.Pattern|callable = None
         """Volitelný filtr pro názvy položek."""
         
         if filterList is not None:
             if isinstance(filterList, str):
-                self.filterList = re.compile(filterList,re.IGNORECASE)
+                filterList = re.compile(filterList,re.IGNORECASE)
             elif isinstance(filterList, re.Pattern):
-                self.filterList = filterList
+                pass
+            elif callable(filterList):
+                pass
             else:
                 raise TypeError("filterItemsRgx musí být string nebo re.Pattern")
-               
+            if select is e_fs_menu_select.file:
+                self.filterFile = filterList
+            if select is e_fs_menu_select.dir:
+                self.filterDir = filterList        
+        
         self.chRoot:None|Path = None
         """Kořenový adresář pro uzamčení uživatele."""
         if lockToDir is not None:
@@ -333,6 +399,16 @@ class fs_menu(c_menu):
             raise ValueError("Adresář nebyl nalezen: " + str(self.dir))
 
 
+        if onShowMenuItem and JBJH.is_callable(onShowMenuItem) is None:
+            raise TypeError("onShowMenuItem musí být callable nebo None")
+        self.__onShowMenuItem:Optional[Callable[[c_fs_itm,str,str],tuple[str,str]]] = onShowMenuItem
+        """Volitelná funkce pro úpravu zobrazení položky."""
+        
+        if onSelectItem and JBJH.is_callable(onSelectItem) is None:
+            raise TypeError("onSelectItem musí být callable nebo None")
+        self.__onSelectItem:Optional[Callable[[Path],Union[onSelReturn|None|bool]]] = onSelectItem
+        """Volitelná funkce pro zpracování výběru položky."""
+
         self.current_dir = Path(self.dir).resolve()
         """Aktuální adresář pro zobrazení."""        
 
@@ -345,9 +421,12 @@ class fs_menu(c_menu):
         
         self.baseTitle:c_menu_item = c_menu_block_items()
         # self.title.append( ("Výběr souboru/adresáře","c") )
-        self.baseTitle.append( ("Výběr "+ ("adresáře" if select is e_fs_menu_select.dir else "souboru"),"c") )
+        self.baseTitle.append((
+            text_color(" Výběr "+ ("adresáře" if select is e_fs_menu_select.dir else "souboru") +" ",en_color.YELLOW,inverse=True),
+            "c"
+        ))
         self.baseTitle.append( (f"v.: {self._VERSION_}") )
-        self.baseTitle.append( ("","Pohyb adresáři: → ←, PgUp/PgDn, Home/End") )
+        self.baseTitle.append( ("",text_color("Pohyb adresáři: → ←, PgUp/PgDn, Home/End", en_color.BRIGHT_YELLOW)) )
         if message is not None:
             self.baseTitle.extend( message )
         
@@ -399,9 +478,10 @@ class fs_menu(c_menu):
                 
             self.current_dir, items = getDir(
                 self.current_dir,
-                filterFile=self.filterList or self.filterFile,
-                filterDir=self.filterList or self.filterDir,
-                hidden=self.hidden
+                filterFile=self.filterFile,
+                filterDir=self.filterDir,
+                hidden=self.hidden,
+                nameFilter=self.filterList
             )
             self.dirItems=[]
             
@@ -410,14 +490,27 @@ class fs_menu(c_menu):
             for itm in items:
                 display_name = f"[DIR] {itm.name}" if itm.is_dir else itm.name
                 
+                lText=display_name
+                rText=str(bytesTx(itm.size)) if itm.is_file else "<DIR>"
+                if self.__onShowMenuItem is not None:
+                    try:
+                        xTx=self.__onShowMenuItem(itm,lText,rText)
+                        if isinstance(xTx, tuple) and len(xTx) == 2:
+                            lText,rText=xTx
+                            display_name=lText
+                        else:
+                            raise TypeError("onShowMenuItem musí vracet tuple[str,str]")
+                    except Exception as e:
+                        raise RuntimeError(f"Chyba v onShowMenuItem funkci: {str(e)}")
+                
                 self.dirItems.append(
                     c_menu_item(
-                        display_name,
+                        lText,
                         f"{choice:02}",
                         self.vyberItem,
                         None,
                         itm,
-                        atRight=str(bytesTx(itm.size)) if itm.is_file else "<DIR>"
+                        atRight=rText
                     )
                 )
                 choice+=1
@@ -449,8 +542,8 @@ class fs_menu(c_menu):
         self.subTitle.append( (f"Filtr názvů souborů:", text_inverse(" "+self.filterList.pattern+" ") if self.filterList else "ŽÁDNÝ") )
         
         # aktuální cesta
-        self.afterTitle =[]
-        self.afterTitle.append( (f"Akt.cesta: ", str(self.current_dir)) )        
+        self.afterTitle =c_menu_block_items( rightBrackets=False)
+        self.afterTitle.append( ( text_color(f" Akt.cesta: ",color=en_color.BRIGHT_BLUE,inverse=True),  text_color(str(self.current_dir),color=en_color.BRIGHT_CYAN)) )
         self.afterTitle.append('-')
 
         # přidáme info o počtu položek a stránkování        
@@ -472,7 +565,29 @@ class fs_menu(c_menu):
         
         if self.select is not e_fs_menu_select.dir and fs.is_dir:
             return False
-        return onSelReturn(endMenu=True,data=item.data.name + item.data.ext)
+        
+        data:c_fs_itm = item.data
+        ret=str(data.name) + (data.ext if data.ext else "")
+        if self.__onSelectItem is not None:
+            pth=Path(data.path)
+            try:
+                res=self.__onSelectItem(pth)
+                if isinstance(res, onSelReturn):
+                    res.endMenu=res.ok  # pokud je ok, ukončíme menu
+                    return res
+                elif isinstance(res, bool):
+                    if res is True:
+                        return onSelReturn(endMenu=True,data=ret)
+                    else:
+                        return False
+                else:
+                    return False
+            except Exception as e:
+                return onSelReturn(
+                    err=f"Chyba v onSelectItem funkci: {str(e)}"
+                )
+        
+        return onSelReturn(endMenu=True,data=ret)
         
     def toAdr(self, item:c_menu_item) -> None:
         """Zpracuje vložení klávesy."""
