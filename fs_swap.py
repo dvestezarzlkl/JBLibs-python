@@ -94,10 +94,55 @@ def modifyFstabSwapEntry(filename: str, add: bool = True) -> None:
 
 @dataclass
 class curMemInfo:
+    """Aktuální informace o paměti a swapu systému.
+    """
+    
     mem_total: bytesTx
+    """Celková velikost paměti RAM."""
     mem_available: bytesTx
+    """Dostupná velikost paměti RAM."""
     swap_total: bytesTx
+    """Celková velikost swap prostoru."""
     swap_free: bytesTx
+    """Dostupná velikost swap prostoru."""
+    
+    __mem_used: bytesTx = None
+    __swap_used: bytesTx = None
+    __mup: float = None
+    __sup: float = None
+    
+    @property
+    def mem_used(self) -> bytesTx:
+        """Využitá velikost paměti RAM."""
+        if self.__mem_used is None:
+            self.__mem_used = bytesTx(self.mem_total.bytes - self.mem_available.bytes)
+        return self.__mem_used
+    @property
+    def swap_used(self) -> bytesTx:
+        """Využitá velikost swap prostoru."""
+        if self.__swap_used is None:
+            self.__swap_used = bytesTx(self.swap_total.bytes - self.swap_free.bytes)
+        return self.__swap_used
+    
+    @property
+    def mem_usage_percent(self) -> float:
+        """Procento využití paměti RAM."""
+        if self.__mup is None:
+            if self.mem_total.bytes == 0:
+                self.__mup = 0.0
+            else:
+                self.__mup = (self.mem_used.bytes / self.mem_total.bytes) * 100.0
+        return self.__mup
+    
+    @property
+    def swap_usage_percent(self) -> float:
+        """Procento využití swap prostoru."""
+        if self.__sup is None:
+            if self.swap_total.bytes == 0:
+                self.__sup = 0.0
+            else:
+                self.__sup = (self.swap_used.bytes / self.swap_total.bytes) * 100.0
+        return self.__sup
 
 def getCurMemInfo() -> curMemInfo:
     """
