@@ -403,14 +403,44 @@ def lsblk_list_disks(
         filterDev = re.compile(filterDev)
         
     # lsblk -no NAME,LABEL,SIZE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS --json
-    out = subprocess.run(
+    old=False
+    o,r,e = runRet(
         ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS,PTUUID"],
-        capture_output=True, text=True
+        stdOutOnly=False
     )
-    data = json.loads(out.stdout)
+    if r!=0:
+        if "unknown column" in e and "MOUNTPOINTS" in e:
+            # starší verze lsblk která nepodporuje MOUNTPOINTS ale jen MOUNTPOINT
+            o,r,e = runRet(
+                ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINT,PTUUID"],
+                stdOutOnly=False
+            )
+            if r!=0:
+                raise lsblkError(f"lsblk command failed: {e.strip()}")
+            old=True
+        else:
+            raise lsblkError(f"lsblk command failed: {e.strip()}")
+    
+    data = json.loads(o)
+    if old:
+        # upravit data aby používala MOUNTPOINTS jako list
+        _fix_mountpoints(data.get('blockdevices', []))        
     disks = __lsblk(data.get('blockdevices', []), None, ignoreSysDisks, mounted, filterDev, filterDevIsRegex)
     disk_dict = {disk.name: disk for disk in disks if disk.fstype != 'swap'}
     return disk_dict
+
+def _fix_mountpoints(nodes:List[dict]):
+    for node in nodes:
+        mp = node.get('mountpoint', None)
+        if mp is None:
+            node['mountpoints'] = []
+        else:
+            node['mountpoints'] = [mp]
+        if 'children' in node and isinstance(node['children'], list):
+            _fix_mountpoints(node['children'])
+        # delete starý klíč
+        if 'mountpoint' in node:
+            del node['mountpoint']
 
 def getDiskPathInfo(diskPath:str, ignoreSysDisks:bool=True) -> Optional[lsblkDiskInfo]:
     """Vrátí info o daném disku nebo partition.
