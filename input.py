@@ -151,7 +151,7 @@ def get_input(
                 err=""
 
             inputText = input(f">>> {TXT_INPUT_A}: ")
-            inputText = inputText.strip()
+            inputText = str(inputText)
             err=""
             if inputText.lower() == 'q':
                 return None
@@ -165,6 +165,8 @@ def get_input(
                 elif callable(rgx):
                     if rgx(inputText) is True:
                         return inputText
+                else:
+                    return inputText
                     
             err = errTx
     finally:
