@@ -79,7 +79,7 @@ TXT_SSMD_ERR15 = "Error writing service file"
 TXT_SSMD_ERR16 = "Error writing timer file"
 TXT_SSMD_ERR17 = "Invalid username, only letters, digits, underscores, and hyphens are allowed"
 TXT_SSMD_ERR18 = "Invalid input"
-TXT_SSMD_ERR19 = "!!! Invalid password\nPassword must contain at least 8 characters, including letters, digits, and special characters"
+TXT_SSMD_ERR19 = "!!! Invalid password\nPassword must contain at least {minLen} characters and at most {maxLen} characters. Allowed characters are letters, digits, and special characters !@#$%^&*()-_=+"
 TXT_SSMD_ERR20 = "Passwords do not match. Try again."
 TXT_SSMD_ERR21 = "Invalid port. Must be between 10000-65000"
 

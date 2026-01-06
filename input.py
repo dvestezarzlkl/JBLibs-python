@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .c_menu import c_menu_block_items
     
+__VERSION__ = "3.0.0"
+    
 confirm_choices: list[tuple[str, str]] = [
     ['y', TXT_INPUT_YES],
     ['n', TXT_INPUT_NO],
@@ -51,7 +53,13 @@ def validate_port(port: Union[int,str], full:bool=False) -> bool:
     else:
         return 1024 <= port <= 65535
 
-def get_username(messagePrefix:None, make_cls: bool=False, maxLength:int=50, minMessageWidth:int=0) -> str:
+def get_username(
+    messagePrefix:None,
+    make_cls: bool=False,
+    maxLength:int=50,
+    minMessageWidth:int=0,
+    regExpStr: str = r'^[\w_-]+$'
+) -> str:
     """
     Čeká na zadání uživatelského jména, validuje ho a vrací
     povolené znaky jsou alfanumerické znaky a-Z , podtržítko a pomlčka
@@ -59,21 +67,27 @@ def get_username(messagePrefix:None, make_cls: bool=False, maxLength:int=50, min
     Parameters:
         assMessagestr (None): text který se zobrazí uživateli jako další řádek pod výzvou, pokud je zadáno
         make_cls (bool): pokud je True, tak se před zadáním smaže obrazovka
-        maxLength (int): maximální délka jména
+        maxLength (int): maximální délka jména, pokud je 0, tak není omezená
         minMessageWidth (int): minimální šířka zprávy
+        regExpStr (str): regulární výraz pro validaci uživatelského jména
         
     Returns:
         str: uživatelské jméno
+        None: pokud uživatel zadá 'q' pro ukončení
     """
     if not minMessageWidth:
-        minMessageWidth=_minMessageWidth    
+        minMessageWidth=_minMessageWidth
     
-    if not isinstance(maxLength, int):
-        maxLength=50
+    if (maxLength := JBJH.is_int(maxLength)) is None or maxLength <= 0:
+        raise ValueError("Parameter maxLength must be positive integer")
+    
+    tx=text_color(TXT_INPUT_USERNAME, color=en_color.BRIGHT_CYAN)
+    tx+= f"\n  {messagePrefix}" if messagePrefix else ""
+    
     return get_input(
-        TXT_INPUT_USERNAME+(f"\n  {messagePrefix}" if messagePrefix else ""),
+        tx,
         False,
-        re.compile(r'^[\w_-]+$'),
+        re.compile(regExpStr),
         maxLength,
         make_cls,
         TXT_SSMD_ERR17,
@@ -168,12 +182,20 @@ def get_input(
                 else:
                     return inputText
                     
-            err = errTx
+            err = text_color(errTx, color=en_color.BRIGHT_RED)
     finally:
         restoreAndClearDown()
 
 # Helper function to get password
-def get_pwd(action: str = "",make_cls:bool=False, minMessageWidth:int=0) -> str:
+def get_pwd(
+    action: str = "",
+    make_cls:bool=False,
+    minMessageWidth:int=0,
+    regExpStr: str = r'^[\w\d!@#$%^&*()-_=+]+$',
+    minLen: int = 8,
+    maxLen: int = 64,
+    errTx: str = TXT_SSMD_ERR19
+) -> str:
     """
     Ask for a password, validate it, and return the valid password.
     
@@ -181,12 +203,26 @@ def get_pwd(action: str = "",make_cls:bool=False, minMessageWidth:int=0) -> str:
         action (str) (""): text which will be displayed to the user
         make_cls (bool) (False): if True, the screen will be cleared before input
         minMessageWidth (int) (0): minimum message width
+        regExpStr (str) (r'^[\w\d!@#$%^&*()-_=+]+$'): regular expression for password validation
+        minLen (int) (8): minimum length of the password
+        maxLen (int) (64): maximum length of the password
+        errTx (str) (TXT_SSMD_ERR19): error message text
         
     Returns:
         str: password
+        None: if the user inputs 'q' to quit
     """
     if not minMessageWidth:
         minMessageWidth=_minMessageWidth    
+    
+    if (minLen := JBJH.is_int(minLen)) is None or minLen < 4:
+        raise ValueError("Parameter minLen must be non-negative integer >= 4")
+    if (maxLen := JBJH.is_int(maxLen)) is None or maxLen < 0:
+        raise ValueError("Parameter maxLen must be non-negative integer")
+    if minLen > maxLen:
+        raise ValueError("Parameter minLen must be less than or equal to maxLen")
+    
+    errTx = errTx.format(minLen=minLen, maxLen=maxLen)
     
     err=""
     savePos()
@@ -196,7 +232,7 @@ def get_pwd(action: str = "",make_cls:bool=False, minMessageWidth:int=0) -> str:
         action=""
     if action:
         action = f": {action}"
-    i=[f"{TXT_INPUT_PWD}{action}"]
+    i=[ text_color(f"{TXT_INPUT_PWD}{action}", color=en_color.BRIGHT_CYAN)]
     s=[f"q = {TXT_END}"]
     
     print("\033[s", end="") # uložení pozice kurzoru
@@ -213,10 +249,10 @@ def get_pwd(action: str = "",make_cls:bool=False, minMessageWidth:int=0) -> str:
             pwd = getpass.getpass(f">>> {TXT_INPUT_A}: ")
             if pwd.lower() == 'q':
                 return None
-            if re.match(r'^[\w\d!@#$%^&*()-_=+]+$', pwd) and len(pwd) >= 8:
+            if re.match(regExpStr, pwd) and len(pwd) >= minLen and len(pwd) <= maxLen:
                 return pwd
             else:
-                err=TXT_SSMD_ERR19
+                err= text_color(errTx,color=en_color.BRIGHT_RED)
     finally:
         restoreAndClearDown()
 
@@ -229,21 +265,22 @@ def get_pwd_confirm(make_cls:bool=False, minMessageWidth:int=0) -> str:
 
     Returns:
         str: _description_
+        None: pokud uživatel zadá 'q' pro ukončení
     """
     if not minMessageWidth:
         minMessageWidth=_minMessageWidth    
     
     while True:
-        password = get_pwd(TXT_INPUT_NEW_PWD,make_cls, minMessageWidth)
+        password = get_pwd(text_color(TXT_INPUT_NEW_PWD,color=en_color.BRIGHT_CYAN),make_cls, minMessageWidth)
         if password == None:
             return None
-        confirm_password = get_pwd(TXT_INPUT_PWD_AGAIN,make_cls, minMessageWidth)
+        confirm_password = get_pwd(text_color(TXT_INPUT_PWD_AGAIN,color=en_color.BRIGHT_GREEN),make_cls, minMessageWidth)
         if confirm_password == None:
             return None
         if password == confirm_password:
             break
         else:
-            print(TXT_SSMD_ERR20)
+            print( text_color(TXT_SSMD_ERR20,color=en_color.BRIGHT_RED) )
     return password
 
 def get_port(make_cls:bool=False, minMessageWidth:int=0) -> int:
@@ -334,8 +371,8 @@ def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
         cls()
     i=[
         msg,
-        ' - '+confirm_choices[0][0].upper()+' = '+confirm_choices[0][1],
-        ' - '+confirm_choices[1][0].upper()+' = '+confirm_choices[1][1]
+        ' - '+ text_color(confirm_choices[0][0].upper()+' = '+confirm_choices[0][1], color=en_color.BRIGHT_GREEN),
+        ' - '+ text_color(confirm_choices[1][0].upper()+' = '+confirm_choices[1][1], color=en_color.BRIGHT_YELLOW)
     ]
     printBlock(i, [], "-", 3, "", False,min_width=minMessageWidth)
     
