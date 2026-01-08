@@ -15,7 +15,7 @@ FSTAB_DIR:str = "/etc/fstab.d"   # per-user fstab soubory
 MOUTPOINT_FILENAME:str = ".sftp_mounts_mng"  # název souboru s mountpointy v home adresáři uživatele
 
 class mountpointsManager:
-    def __init__(self, username:str):
+    def __init__(self, username:str, testonly:bool=False):
         self.log = getLogger("sftpMountsMng")
         self.username = username
         self.ok:bool = False
@@ -39,7 +39,7 @@ class mountpointsManager:
 
 
         # načteme mountpointy
-        jailDir= ssh.ensureJail(self.username)
+        jailDir= ssh.ensureJail(self.username,testOnly=testonly)
         try:
             if os.path.isfile(self.mountpointFile):
                 with open(self.mountpointFile, "r") as f:

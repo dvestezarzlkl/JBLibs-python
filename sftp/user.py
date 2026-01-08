@@ -24,10 +24,11 @@ class sftpUserMng:
         homeDir (str|None): Domovský adresář uživatele pokud existuje a je user ok
     """
     
-    def __init__(self,username:str):
+    def __init__(self,username:str, testOnly:bool=False):
         """Inicializace sftpUserMng instance pro zadaného uživatele.
         Args:
             username (str): uživatelské jméno
+            testOnly (bool): pokud True, tak se neinicializují mountpointy a certifikáty
         Raises:
             RuntimeError: pokud BASE_DIR začíná /home/ (není povoleno)
         """        
@@ -62,7 +63,7 @@ class sftpUserMng:
                     
         self.ok=True # tady jsme už vpodstatě OK
         
-        self.mountpointManager=mountpointsManager(username)
+        self.mountpointManager=mountpointsManager(username, testonly=testOnly)
         """Správce mountpointů uživatele"""    
     
         self.moundpoinstOK:bool = self.mountpointManager.ok

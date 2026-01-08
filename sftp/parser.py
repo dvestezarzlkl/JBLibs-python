@@ -1,5 +1,11 @@
 from ..helper import getLogger
 log = getLogger("sftp.parser")
+"""Pro SFTP manager parsing a uživatelskou správu.
+
+instaluje uživatele ze zadaného JSON souboru, odinstaluje uživatele,
+vytváří seznam uživatelů do JSON souboru a vypisuje seznam aktivních uživatelů.
+
+"""
 
 import os
 import re
@@ -235,7 +241,7 @@ def listActiveUsers()->Union[list['sftpUserMng']|None]:
                 continue
             try:
                 if sftpUserMng.user_exists(username):
-                    u = sftpUserMng(username)
+                    u = sftpUserMng(username, testOnly=True)
                     if u.ok:
                         users.append(u)
             except Exception:

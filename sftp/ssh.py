@@ -1,6 +1,14 @@
 import logging
 log = logging.getLogger("sshd")
 
+"""Modul pro správu SSHD konfigurace pro SFTP uživatele.
+Obsahuje funkce pro vytváření, mazání a úpravu SSHD konfiguračních souborů
+pro jednotlivé SFTP uživatele, stejně jako pro správu jejich jail adresářů a SSH klíčů.
+
+- možnost testOnly pro ensureJail - pouze otestuje existenci jail adresáře bez vytváření
+- podpora odinstalace SSH klíče z authorized_keys souboru uživatele
+"""
+
 from ...JBLibs import helper as jhlp
 import os,pwd
 from ..systemdService import c_service
@@ -247,7 +255,10 @@ def ensureJail(username:str,testOnly:bool=False)->str|None:
             log.info(f" - Jail directory {jail_dir} does not exist for user {username}. Creating it.")
             os.makedirs(jail_dir, exist_ok=True)
         else:
-            log.info(f" - Jail directory {jail_dir} already exists for user {username}.")
+            if not testOnly:
+                log.info(f" - Jail directory {jail_dir} already exists for user {username}.")
+            else:
+                return jail_dir
     except Exception as e:
         log.error(f" < Failed to create jail directory for user {username} at {jail_dir}: {e}")
         log.exception(e)
