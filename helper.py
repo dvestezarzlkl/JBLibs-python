@@ -992,3 +992,23 @@ def runRet(
         return stdout
 
     return stdout, proc.returncode, stderr
+
+def sanitizeFileName(name: str | None, maxlen: int = 25) -> str | None:
+    """ Odstraní ze jména nepovolené znaky, mezery a nahradí je podtržítky.
+    Navíc ořízne text na maxLen
+    
+    Args:
+        name (str | None): Jméno souboru k sanitizaci.
+        maxlen (int): Maximální délka výsledného jména.
+    Returns:
+        str | None: Sanitizované jméno souboru nebo None, pokud bylo vstupní jméno None.
+    """
+    if not name or not isinstance(name, str):
+        return None
+    
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    safe = safe.strip("._-")
+    safe = safe.replace(" ", "_")
+    if not safe:
+        safe = "file"
+    return safe[:maxlen]
