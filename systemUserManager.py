@@ -2,7 +2,7 @@ from .lng.default import *
 from .helper import loadLng
 loadLng()
 
-import os, pwd
+import os, pwd, grp, subprocess
 import subprocess
 from libs.JBLibs.input import get_username, get_pwd_confirm, confirm, anyKey, get_input
 from libs.JBLibs.helper import userExists,getLogger,getUserList
@@ -12,6 +12,14 @@ from typing import Union,List
 log = getLogger(__name__)     
 
 class sshMng:
+    # kam ukládat per-user ssh policy
+    SSHD_D_DIR = "/etc/ssh/sshd_config.d"
+    SSHD_USER_PREFIX = "90-jb-user-"
+    # kam ukládat per-user sudo policy
+    SUDOERS_D_DIR = "/etc/sudoers.d"
+    SUDO_USER_PREFIX = "90-jb-user-"    
+    
+    
     @staticmethod
     def getUserHome(username:str)->str|None:
         """Získá domovský adresář uživatele.
@@ -469,31 +477,7 @@ class sshMng:
             return TXT_ERROR_OCCURRED
         anyKey()
         return None
-
-    @staticmethod    
-    def has_sudo_privileges(username:str) -> Union[bool,str]:
-        """Ověří, zda má uživatel sudo práva
-        
-        Parameters:
-            username (str): jméno uživatele
-            
-        Returns:
-            bool: True pokud má sudo práva, False pokud nemá
-            str: chyba, pokud došlo k chybě
-        """
-        try:
-            # Použijeme příkaz getent group sudo, který vrátí uživatele ve skupině sudo
-            result = subprocess.run(['getent', 'group', 'sudo'], capture_output=True, text=True)
-            users_in_sudo_group = result.stdout
-
-            if username in users_in_sudo_group:
-                return True
-            else:
-                return False
-
-        except subprocess.CalledProcessError:
-            return TXT_ERROR_OCCURRED
-        
+       
     @staticmethod
     def add_sudo_privileges(username)->Union[str, None]:
         """Přidá uživateli sudo práva
@@ -505,7 +489,7 @@ class sshMng:
             str: chyba, pokud došlo k chybě
             None: pokud OK
         """
-        x=sshMng.has_sudo_privileges(username)
+        x=sshMng.is_sudoer(username)
         if isinstance(x,str):
             return x
         elif x:
@@ -527,7 +511,7 @@ class sshMng:
             str: chyba, pokud došlo k chybě
             None: pokud OK
         """
-        x=sshMng.has_sudo_privileges(username)
+        x=sshMng.is_sudoer(username)
         if isinstance(x,str):
             return x
         elif not x:
@@ -538,6 +522,241 @@ class sshMng:
         except subprocess.CalledProcessError as e:
             log.error(f"Chyba při odebírání uživatele ze skupiny sudo: {e}", exc_info=True)
             return TXT_ERROR_OCCURRED
+        
+
+    @staticmethod
+    def _run(cmd:list[str]) -> tuple[int,str,str]:
+        """Spustí příkaz a vrátí návratový kód, stdout a stderr.
+        
+        Args:
+            cmd (list[str]): příkaz a jeho argumenty jako seznam
+            
+        Returns:
+            tuple[int,str,str]: (returncode, stdout, stderr)
+        """
+        
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        return p.returncode, p.stdout or "", p.stderr or ""
+
+    # ---------- SUDO state ----------
+    @staticmethod
+    def is_sudoer(username: str) -> bool:
+        """True, pokud uživatel patří do sudo (sekundárně nebo primárně).
+        
+        Args:
+            username (str): uživatelské jméno
+        Returns:
+            bool: True pokud je uživatel sudoer, jinak False
+        """
+        try:
+            # primární group
+            primary_gid = pwd.getpwnam(username).pw_gid
+            primary_group = grp.getgrgid(primary_gid).gr_name
+            if primary_group == "sudo":
+                return True
+
+            # sekundární group membership
+            sudo_gr = grp.getgrnam("sudo")
+            return username in sudo_gr.gr_mem
+        except KeyError:
+            # user nebo group neexistuje
+            return False
+
+    @staticmethod
+    def _sudo_nopasswd_path(username: str) -> str:
+        """Cesta k sudoers.d souboru pro NOPASSWD pravidlo uživatele.
+        Args:
+            username (str): uživatelské jméno
+        Returns:
+            str: cesta k souboru
+        """        
+        return os.path.join(sshMng.SUDOERS_D_DIR, f"{sshMng.SUDO_USER_PREFIX}{username}-nopasswd")
+
+    @staticmethod
+    def has_sudo_nopasswd(username: str) -> bool:
+        """True, pokud má uživatel NOPASSWD pravidlo v sudoers.d.
+        Args:
+            username (str): uživatelské jméno
+        Returns:
+            bool: True pokud má NOPASSWD pravidlo, jinak False
+        """
+        return os.path.isfile(sshMng._sudo_nopasswd_path(username))
+
+    @staticmethod
+    def enforce_sudo_nopasswd(username: str, enable: bool) -> str|None:
+        """
+        Vytvoří nebo odstraní NOPASSWD pravidlo v sudoers.d pro uživatele.
+        
+        Args:
+            username (str): uživatelské jméno
+            enable (bool): True pro vytvoření NOPASSWD pravidla, False pro odstranění            
+                enable=True  -> vytvoří NOPASSWD jen pokud je user sudoer, jinak odstraní
+                enable=False -> vždy odstraní
+        Returns:
+            str|None: chyba, pokud došlo k chybě, jinak None
+        """
+        path = sshMng._sudo_nopasswd_path(username)
+
+        def _remove():
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    return f"{TXT_ERROR_OCCURRED}: {e}"
+            return None
+
+        if not enable:
+            return _remove()
+
+        # enable == True
+        if not sshMng.is_sudoer(username):
+            # uklid: nemá být NOPASSWD, když není sudoer
+            return _remove()
+
+        try:
+            content = f"{username} ALL=(ALL) NOPASSWD: ALL\n"
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            subprocess.run(["chown", "root:root", path], check=True)
+            subprocess.run(["chmod", "0440", path], check=True)
+
+            # validace přes visudo
+            subprocess.run(["visudo", "-cf", path], check=True)
+            return None
+        except subprocess.CalledProcessError as e:
+            # když visudo failne, radši soubor smaž a vrať chybu
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except:
+                pass
+            return f"{TXT_ERROR_OCCURRED}: {e}"
+        except Exception as e:
+            return f"{TXT_ERROR_OCCURRED}: {e}"
+
+    # ---------- SSH password login policy ----------
+    @staticmethod
+    def _sshd_user_path(username: str) -> str:
+        """Cesta k sshd_config.d souboru pro per-user SSH policy.
+        Args:
+            username (str): uživatelské jméno
+        Returns:
+            str: cesta k souboru
+        """
+        return os.path.join(sshMng.SSHD_D_DIR, f"{sshMng.SSHD_USER_PREFIX}{username}.conf")
+
+    @staticmethod
+    def is_password_login_disabled(username: str) -> bool:
+        """True, pokud má uživatel per-user SSH policy zakazující PasswordAuthentication.
+        Args:
+            username (str): uživatelské jméno
+        Returns:
+            bool: True pokud má per-user SSH policy, jinak False
+        """
+        return os.path.isfile(sshMng._sshd_user_path(username))
+
+    @staticmethod
+    def _reload_sshd() -> str|None:
+        """Reload SSH server služby (ssh / sshd)."""
+        try:
+            subprocess.run(
+                ["systemctl", "reload", "ssh"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return None
+        except subprocess.CalledProcessError:
+            try:
+                subprocess.run(
+                    ["systemctl", "reload", "sshd"],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                return None
+            except subprocess.CalledProcessError as e:
+                return f"{TXT_ERROR_OCCURRED}: {e}"
+
+    @staticmethod
+    def set_password_login(username: str, enable: bool, require_totp: bool=True) -> str|None:
+        """
+        Per-user policy přes sshd_config.d.
+        
+        Args:
+            username (str): uživatelské jméno
+            enable (bool): True pro povolení PasswordAuthentication (odstraní per-user soubor), 
+                           False pro zakázání PasswordAuthentication
+            require_totp (bool): pokud True, vynutí publickey + keyboard-interactive
+        Returns:
+            str|None: chyba, pokud došlo k chybě, jinak None
+        """
+        path = sshMng._sshd_user_path(username)
+
+        if enable:
+            # smazat per-user override
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                
+                # reload sshd
+                err = sshMng._reload_sshd()
+                if err:
+                    return err
+                
+                return None
+            except Exception as e:
+                return f"{TXT_ERROR_OCCURRED}: {e}"
+
+        # enable == False
+        # bezpečnost: bez klíčů tohle nedovol (aspoň autorizované klíče existují a nejsou prázdné)
+        u = sshUser(username)
+        if u.keyCount == 0:
+            return TXT_SSH_MNG_024.format(name=username)  # nebo vlastní text: "authorized_keys empty"
+
+        try:
+            os.makedirs(sshMng.SSHD_D_DIR, exist_ok=True)
+
+            if require_totp:
+                methods = "publickey,keyboard-interactive"
+                kbd = "yes"
+            else:
+                methods = "publickey"
+                kbd = "no"
+
+            conf = (
+                f"Match User {username}\n"
+                f"    PasswordAuthentication no\n"
+                f"    PubkeyAuthentication yes\n"
+                f"    KbdInteractiveAuthentication {kbd}\n"
+                f"    AuthenticationMethods {methods}\n"
+            )
+
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(conf)
+
+            subprocess.run(["chown", "root:root", path], check=True)
+            subprocess.run(["chmod", "0644", path], check=True)
+
+            # validace sshd konfigurace
+            subprocess.run(["sshd", "-t"], check=True)
+
+            # reload sshd
+            err = sshMng._reload_sshd()
+            if err:
+                return err
+            return None
+        except subprocess.CalledProcessError as e:
+            # revert soubor při failu
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except:
+                pass
+            return f"{TXT_ERROR_OCCURRED}: {e}"
+        except Exception as e:
+            return f"{TXT_ERROR_OCCURRED}: {e}"        
 
 class listKeyRow:
     userName:str=""
@@ -627,7 +846,7 @@ class sshUser:
     @property
     def hasSudo(self)->bool:
         """True pokud uživatel má sudo práva"""
-        return sshMng.has_sudo_privileges(self.userName)
+        return sshMng.is_sudoer(self.userName)
     
     def __init__(self,userName:str):
         self._userName=userName
@@ -646,6 +865,43 @@ class sshUser:
     def createCerKey(self)->Union[str, None]:
         """Vytvoří certifikát pro uživatele"""
         return sshMng.createCert(self.userName)
+    
+    @property
+    def isSudoer(self) -> bool:
+        """True pokud uživatel patří do sudo skupiny"""
+        return sshMng.is_sudoer(self.userName)
+
+    @property
+    def hasSudoNoPasswd(self) -> bool:
+        """True pokud má uživatel NOPASSWD pravidlo v sudoers.d"""
+        return sshMng.has_sudo_nopasswd(self.userName)
+
+    @property
+    def passwordLoginDisabled(self) -> bool:
+        """True pokud má uživatel zakázané přihlašování heslem přes per-user sshd_config.d"""
+        return sshMng.is_password_login_disabled(self.userName)
+    
+    def enforceSudoNoPasswd(self, enable: bool) -> str|None:
+        """Nastaví nebo odstraní NOPASSWD pravidlo v sudoers.d pro uživatele.
+        
+        Args:
+            enable (bool): True pro vytvoření NOPASSWD pravidla, False pro odstranění
+            
+        Returns:
+            str|None: chyba, pokud došlo k chybě, jinak None
+        """
+        return sshMng.enforce_sudo_nopasswd(self.userName, enable)
+    
+    def setPasswordLogin(self, enable: bool, require_totp: bool=True) -> str|None:
+        """Nastaví per-user sshd_config.d pro povolení nebo zakázání přihlašování heslem.
+        
+        Args:
+            enable (bool): True pro povolení PasswordAuthentication, False pro zakázání
+            require_totp (bool): pokud True, vynutí publickey + keyboard-interactive
+        Returns:
+            str|None: chyba, pokud došlo k chybě, jinak None
+        """
+        return sshMng.set_password_login(self.userName, enable, require_totp)
         
 class sshUsers:
     _users:List[sshUser]=None
