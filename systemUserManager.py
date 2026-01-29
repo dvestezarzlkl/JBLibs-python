@@ -712,7 +712,7 @@ class sshMng:
         # enable == False
         # bezpečnost: bez klíčů tohle nedovol (aspoň autorizované klíče existují a nejsou prázdné)
         u = sshUser(username)
-        if u.keyCount == 0:
+        if u.enabledKeysCount == 0:
             return TXT_SSH_MNG_024.format(name=username)  # nebo vlastní text: "authorized_keys empty"
 
         try:
@@ -842,6 +842,18 @@ class sshUser:
     def keyCount(self)->int:
         """Počet klíčů pro uživatele"""
         return len(self.keys) if self.keys else 0
+    
+    @property
+    def enabledKeys(self)->List[listKeyRow]:
+        """Seznam povolených klíčů pro uživatele (přítomné v authorized_keys)"""
+        if not self.keys:
+            return []
+        return [k for k in self.keys if k.included]
+    
+    @property
+    def enabledKeysCount(self)->int:
+        """Počet povolených klíčů pro uživatele (přítomné v authorized_keys)"""
+        return len(self.enabledKeys)
     
     @property
     def hasSudo(self)->bool:
