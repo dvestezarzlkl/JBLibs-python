@@ -147,12 +147,13 @@ class git:
             return 1, "", str(e)
 
         finally:
-            log.info(f"  < RETURN CODE: {proc.returncode}")
-            if self.dbg:
-                if proc.stdout:
-                    log.info(f"  < - STDOUT     : {proc.stdout.strip()}")
-                if proc.stderr:
-                    log.info(f"  < - STDERR     : {proc.stderr.strip()}")
+            if proc:
+                log.info(f"  < RETURN CODE: {proc.returncode}")
+                if self.dbg:
+                    if proc.stdout:
+                        log.info(f"  < - STDOUT     : {proc.stdout.strip()}")
+                    if proc.stderr:
+                        log.info(f"  < - STDERR     : {proc.stderr.strip()}")
             if temp_cred_file and os.path.exists(temp_cred_file):
                 try:
                     os.remove(temp_cred_file)
