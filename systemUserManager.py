@@ -261,6 +261,157 @@ class sshMng:
                 log.error(f"Error deleting certificate for user {userName}: {e}", exc_info=True)
                 return TXT_SSH_MNG_018
         return None
+
+    @staticmethod
+    def _validate_ssh_private_key(key_text: str) -> tuple[bool, bool]:
+        """
+        Validuje SSH privátní klíč.
+        Returns:
+            (is_valid, is_encrypted)
+        """
+        import tempfile, subprocess, os
+
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as f:
+                f.write(key_text)
+                path = f.name
+
+            os.chmod(path, 0o600)
+
+            subprocess.run(
+                ["ssh-keygen", "-yf", path],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            # ssh-keygen -y prošlo => validní a NEencrypted
+            return True, False
+
+        except subprocess.CalledProcessError:
+            # ssh-keygen selhalo:
+            # - buď encrypted
+            # - nebo neplatný formát
+            #
+            # Rozlišení řešíme níž
+            return True, True
+
+        except Exception:
+            # sem padne cokoliv jiného (IO, FS, práva…)
+            return False, False
+
+        finally:
+            if path and os.path.isfile(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+                
+    @staticmethod
+    def _validate_ssh_public_key(key_text: str) -> bool:
+        """
+        Validuje SSH veřejný klíč.
+        
+        Parameters:
+            key_text (str): text klíče
+        Returns:
+            bool: True pokud je klíč platný
+        """
+        import tempfile, subprocess, os
+
+        key_text = key_text.strip()
+        if not key_text.startswith(("ssh-", "ecdsa-")):
+            return False
+
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False) as f:
+                f.write(key_text + "\n")
+                path = f.name
+
+            subprocess.run(
+                ["ssh-keygen", "-lf", path],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return True
+        except Exception:
+            return False
+        finally:
+            if path and os.path.isfile(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass                
+    
+    @staticmethod
+    def import_certificate(username:str)-> Union[str, None]:
+        """
+        Importuje SSH klíč do sshManager adresáře uživatele
+        - zažádá o vložení jména klíče: a-Z 0-9 _ -
+        - otestuje název existenece klíče
+        - Zavolá input password pro vložení dat klíče
+        - zkontroluje jeho validitu, že se jedná o platný SSH klíč - veřejný !
+        - uloží do sshManager adresáře, kde musí vytvořit dummy private key any nám pak fungovalo mazání přes managera
+        Parameters:
+            username (str): jméno uživatele
+        Returns:
+            str: chyba, pokud došlo k chybě
+            None: pokud OK
+        """
+        print(TXT_KEY_IMPORT_HEADER_TXT)
+        keyname = get_input(
+            f"{TXT_INP_PUB_KEY_KEYNAME}: ",
+            accept_empty=False,
+            rgx= lambda x: r"^[a-zA-Z0-9_-]+$".match(x),
+            errTx=TXT_INP_PUB_KEY_KEYNAME_ERR
+        )
+        if not keyname:
+            return TXT_ABORTED
+        
+        if sshMng.certExists(username, keyname):
+            log.error(f"Certificate for user {username} already exists.")
+            return TXT_SSH_MNG_009.format(key=keyname)
+        
+        print(TXT_INP_PUB_KEY_STREAM)
+        key_data = get_input(
+            f"{TXT_INP_PUB_KEY_STREAM_INLINE_TXT}:\n",
+            accept_empty=False,
+            rgx= lambda x: sshMng._validate_ssh_public_key(x),
+            errTx=TXT_INP_PUB_KEY_STREAM_FORMAT_ERR
+        )
+        if not key_data:
+            return TXT_ABORTED
+                
+        if not (ssh_manager_dir:=sshMng.getDirPath_sshManager(username,True)):
+            log.error(f"SSH Manager directory for user {username} does not exist.")
+            return TXT_SSH_MNG_008
+        
+        private_key_path = os.path.join(ssh_manager_dir, f"{keyname}")
+        public_key_path = f"{private_key_path}.pub"
+        
+        try:
+            # Vytvoření dummy private key
+            with open(private_key_path, 'w') as f:
+                f.write("DUMMY PRIVATE KEY - IMPORTED PUBLIC KEY ONLY\n")
+            os.chmod(private_key_path, 0o600)
+            
+            # Uložení veřejného klíče
+            with open(public_key_path, 'w') as f:
+                f.write(key_data.strip() + '\n')
+            os.chmod(public_key_path, 0o644)
+            
+            subprocess.run(['chown', f"{username}:{username}", private_key_path, public_key_path], check=True)
+            
+            print(TXT_INP_PUB_KEY_SUCC_IMPORT.format(name=username, cert=keyname))
+            anyKey()
+        except Exception as e:
+            log.error(f"Error importing SSH key for user {username}: {e}", exc_info=True)
+            return f"{TXT_ERROR_OCCURRED}: {e}"
+        
+        return None
     
     @staticmethod
     def checkKeyIncluded(username, fileName) -> bool:
