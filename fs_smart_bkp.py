@@ -430,6 +430,9 @@ class c_bkp:
         # ------------------------------------------------------------------------------------
         # Výběr zdrojového programu (partclone nebo dd)
         # ------------------------------------------------------------------------------------
+        # pokud je komporese 0 tak ddonly=true
+        if compression and cLevel == 0:
+            ddOnly = True
         pc_prog = None if ddOnly else c_bkp_hlp.program_for_fs(fs)
 
         if pc_prog:
@@ -579,3 +582,20 @@ class c_bkp_hlp:
         if p2.returncode != 0:
             raise RuntimeError("Chyba při kompresi streamu do 7z.")
     
+    @staticmethod
+    def generateNewDiskId(disk: str) -> None:
+        """
+        Vygeneruje nové náhodné DISK GUID pro GPT disk, bez změny GUID u partition.
+        Bezpečné pro boot i když se používá PARTUUID.
+        """
+        import uuid
+        
+        dev = normalizeDiskPath(disk)
+        new_guid = str(uuid.uuid4())
+        print(f"[INFO] Nastavuji nové disk GUID pro {dev}: {new_guid} ...")
+
+        o, r, e = runRet(["sgdisk", f"--disk-guid={new_guid}", dev], stdOutOnly=False, noOut=True)
+        if r != 0:
+            raise RuntimeError(f"Chyba při nastavení disk GUID pro {dev}: {e}")
+        
+        return
