@@ -514,6 +514,21 @@ class fs_menu(c_menu):
                     )
                 )
                 choice+=1
+            self.dirItems.append(c_menu_item(
+                "Vyber aktuální cestu",
+                "p",
+                self.vyberItem,
+                None,
+                c_fs_itm(
+                    name=str(self.current_dir.name),
+                    ext="",
+                    size=0,
+                    mtime=0,
+                    type=1,
+                    path=self.current_dir.resolve()
+                ),
+                atRight=text_color("<OK>", color=en_color.BRIGHT_GREEN)
+            ))
                 
         # do .menu přidáme položky z dirItems se stránkováním
         start_idx = self.page * self.pageItemsCount
