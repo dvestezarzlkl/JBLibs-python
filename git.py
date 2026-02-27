@@ -96,6 +96,7 @@ class git:
         
         temp_cred_file = None
         log.info(spc(2) + f"> RUN CMD     : '{' '.join(cmd)}'")
+        proc = None
         try:
             u = getpass.getuser()
             if user is None:
@@ -257,13 +258,16 @@ class git:
             log.info(f"  - {path}: některé submoduly vyžadují update.")
             return True
 
-        # Porovnej HEAD s upstream
-        code, out, err = self._run(["git", "rev-list", f"HEAD..{upstream}", "--count"], path, user)
+        # Porovnej HEAD s čerstvě fetchnutým FETCH_HEAD.
+        # Pozn.: při `git fetch <remote> <branch>` nemusí být vždy spolehlivě
+        # aktualizován lokální remote-tracking ref (`origin/<branch>`),
+        # takže porovnání proti upstreamu může vracet false-negative.
+        code, out, err = self._run(["git", "rev-list", "HEAD..FETCH_HEAD", "--count"], path, user)
         if code == 0 and out.isdigit():
-            log.info(f"  = rozdíl vůči {upstream} je {out} commitů.")
+            log.info(f"  = rozdíl vůči FETCH_HEAD ({upstream}) je {out} commitů.")
             return int(out) > 0
         else:
-            log.error(f"  ! {path}: selhalo zjištění rozdílu vůči {upstream}. {err}")
+            log.error(f"  ! {path}: selhalo zjištění rozdílu vůči FETCH_HEAD ({upstream}). {err}")
             return False
 
     def update(
