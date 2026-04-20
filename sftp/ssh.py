@@ -1,4 +1,6 @@
 import logging
+from typing import Tuple
+
 log = logging.getLogger("sshd")
 
 """Modul pro správu SSHD konfigurace pro SFTP uživatele.
@@ -309,3 +311,51 @@ def restart_sshd()->bool:
         if not s.start():
             log.error(" < Failed to start sshd service.")
             return False
+
+def generate_ssh_ed25519_keypair(comment: str = "default_user") -> Tuple[bool, Tuple[str, str] | str]:
+    """Vygeneruje SSH key pair typu Ed25519.
+
+    Args:
+        comment: komentář na konec public key, např. uživatel nebo identifikátor
+
+    Returns:
+        při úspěchu:
+            (True, (private_key_str, public_key_str))
+        při chybě:
+            (False, error_message)
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+    except ImportError as e:
+        return False, (
+            "Library 'cryptography' is required for Ed25519 key generation. "
+            f"Install it with 'pip install cryptography'. Error: {e}"
+        )
+
+    try:
+        # vygenerování privátního klíče
+        private_key = Ed25519PrivateKey.generate()
+
+        # privátní klíč ve formátu OpenSSH
+        private_key_str = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.OpenSSH,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+
+        # veřejný klíč v OpenSSH public formátu: b"ssh-ed25519 AAAA..."
+        public_key_bytes = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.OpenSSH,
+            format=serialization.PublicFormat.OpenSSH,
+        )
+        public_key_str = public_key_bytes.decode("utf-8")
+
+        if comment:
+            public_key_str = f"{public_key_str} {comment}"
+
+        return True, (private_key_str, public_key_str)
+
+    except Exception as e:
+        return False, f"Failed to generate Ed25519 SSH key pair: {e}"
+    

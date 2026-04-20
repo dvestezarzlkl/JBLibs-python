@@ -77,7 +77,7 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
         - každý klíč je jméno mountpointu v jailu
         - každá hodnota je reálná cesta k umístění
     - `sftpcerts` (optional array) je string[] pole certifikátů
-        POZOR hodnota může začínat "b64:..." což znamená že je certifikát base64 zakódován
+        POZOR hodnota může začínat "b64:..." což znamená že je certifikát base64 zakódován, taky může obsahovat "-pk:" část s privátní částí pro import z OpenSSH formátu, v tom případě se privátní část ignoruje a použije se pouze veřejná část certifikátu
     - `sambaVault` (optional bool) zda vytvořit mountpointy přes sambu (CIFS) nebo přímo bindem
         výchozí je False (bind mount)
     
@@ -195,6 +195,11 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
                         continue
                     cert=cert.strip()
                     if cert.startswith("b64:"):
+                        #zahodíme private key část, která je oddělena "-pk:"
+                        pk_index = cert.find("-pk:")
+                        if pk_index != -1:
+                            cert = cert[:pk_index]
+                        
                         log.info(f"   - Decoding base64 certificate for user {username}.")
                         b64_data=cert[4:]
                         try:
