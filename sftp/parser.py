@@ -12,12 +12,16 @@ import re
 import json5
 import base64
 import pwd
-from typing import Union
+from typing import List, Union
 from .user import sftpUserMng
 from . import ssh
 from .glob import SAFE_NAME_RGX, BASE_DIR
 from . import sambaPoint as smb
-from typing import Dict
+from typing import Dict,Optional,Tuple
+
+_DEFAULT_CONFIG_ETC_DIR_ = "jb_sftpmanager"
+_DEFAULT_CONFIG_NAME_ = "config"
+_DEFAULT_CONFIG_EXT_ = "jsonc"
 
 class mountpointPerms:
     def __init__(self,row:dict)->None:
@@ -55,7 +59,17 @@ def safeName(name:str,throw:bool=True)->bool:
         raise err
     return b
 
-def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
+def getDefaultEtcConfigPath(filename:str=_DEFAULT_CONFIG_NAME_)->str:
+    """Vrátí výchozí cestu k JSON konfiguračnímu souboru v /etc/jb_sftpmanager/config.jsonc
+    
+    Args:
+        filename (str): jméno konfiguračního souboru bez přípony
+    Returns:
+        str: cesta k JSON konfiguračnímu souboru
+    """
+    return os.path.join('/etc', _DEFAULT_CONFIG_ETC_DIR_, f"{filename}.{_DEFAULT_CONFIG_EXT_}")
+
+def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
     """Vytvoří uživatele ze zadaného json souboru
     Musí mít root property:
     - `sftpuser` (string) a v něm uživatelské jméno
@@ -71,11 +85,16 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
         kde se uživatel stane rootem výše uvedených property
     
     Args:
-        file (str): cesta k json souboru
+        file (str): deprecated - je ignrováno, vždy se použije default v ETC
     Returns:
         list[sftpUserMng]: seznam vytvořených uživatelů
         None pokud se vytvoření uživatelů nezdaří
     """
+    b,f = check_config_exists()
+    if not b:
+        log.error(f"Cannot determine JSON input file path: {f}")
+        return None
+    file=f
     
     log.info(f"Loading SFTP users from JSON file {file}.")
     if not os.path.isfile(file):
@@ -225,9 +244,31 @@ def createUserFromJson(file:str)->Union[list['sftpUserMng']|None]:
         return None
     return ret
     
-@staticmethod
+def check_config_exists(backupPaths:List[str]=None) -> tuple[bool, str]:
+    """Zkontroluje, zda existuje skript sftpmanager.py v předdefinovaných umístěních.
+    Args:
+        backupPaths (List[str]): Volitelný seznam dalších cest k prohledání kromě výchozí cesty v /etc/jb_sftpmanager/config.jsonc
+    
+    Returns:
+        Tuple[bool, Optional[str]]: 
+            - bool pokud byl script nalezen
+            - str s cestou k nalezenému scriptu nebo chybovou zprávou (bool=False)
+                Vrací cestu k sftpmanager.py pokud je nalezen, jinak chybovou zprávu.
+    """
+    cfg = getDefaultEtcConfigPath()
+    if os.path.isfile(cfg):
+            return True, cfg
+        
+    if backupPaths is not None:
+        for path in backupPaths:
+            if os.path.isfile(path):
+                return True, path
+    return False, "No configuration file found in expected locations."
+    
 def listActiveUsers()->Union[list['sftpUserMng']|None]:
-    """Vrátí seznam všech aktivních sftpUserMng uživatelů v systému.
+    """Vrátí seznam všech **aktivních** sftpUserMng uživatelů v systému
+    !!! není závislé na JSON souboru, ale prohledá systémové uživatele a zjistí kteří z nich jsou sftpUserMng uživatelé.
+    
     Returns:
         Union[list[sftpUserMng]|None]: seznam uživatelů nebo None pokud dojde k chybě
         None pokud dojde k chybě
@@ -250,14 +291,24 @@ def listActiveUsers()->Union[list['sftpUserMng']|None]:
         return None
     return users
 
-def createJson(file:str,overwrite:bool)->bool:
-    """Vytvoří JSON soubor se seznamem všech sftpUserMng uživatelů v systému.
+def createJson(overwrite:bool=False)->bool:
+    """Vytvoří JSON soubor se seznamem všech sftpUserMng uživatelů v systému - tzn aktivních uživatelů, 
+       funkce se snaží o rekonstrukci původního JSON souboru, ze kterého by se dali znovu vytvořit stejní uživatelé,
+       ale záleží na tom jak dobře jsou uživatelé rekonstruovatelní z aktuálního stavu systému
+       slouží v případě ztráty původního JSON souboru
     Args:
-        file (str): cesta k výstupnímu JSON souboru
         overwrite (bool): pokud True, přepíše existující soubor
     Returns:
         bool: True pokud se vytvoření souboru podařilo, jinak False
     """
+    b,f = check_config_exists()
+    if b and not overwrite:
+        log.info(f"Output JSON file already exists: {f}. Use overwrite=True to overwrite it.")
+        return False
+    elif not b:
+        file=getDefaultEtcConfigPath()
+        log.info(f"No output JSON file specified, using default path: {file}.")
+    
     log.info(f"Creating JSON file {file} with SFTP users.")
     if os.path.isfile(file) and not overwrite:
         log.error(f"JSON file {file} already exists and overwrite is False.")
@@ -337,8 +388,94 @@ def __uninstallUser(username:str|sftpUserMng)->bool:
     except Exception as e:
         log.error(f"Failed to uninstall SFTP user {username}: {e}")
         log.exception(e)
-        return False
+        return False    
     
+
+def uninstallUnwantedUsers()->bool:
+    """Odinstaluje všechny sftpUserMng uživatele ze systému, kteří nejsou v JSON souboru.
+    JSON soubor musí být umístěn v předdefinované cestě a musí obsahovat pole "users" se seznamem uživatelů, kteří by měli zůstat nainstalovaní.
+    Returns:
+        bool: True pokud se odinstalace podařila, jinak False
+    """
+    from .sambaPoint import smbHelp    
+    log.info("Uninstalling unwanted SFTP users.")
+    b, f = check_config_exists()
+    if not b:
+        log.error(f"Cannot determine JSON input file path: {f}")
+        return False
+    json_path = f    
+    
+    try:
+        # nejdříve načteme všechny uživatele ze systému a všechny uživatele z JSON souboru,
+        # pak porovnáme a odinstalujeme ty kteří jsou v systému ale nejsou v JSON souboru
+        
+        # vyčteme uživatele z JSON souboru
+        users_in_json = set()
+        if os.path.isfile(json_path):
+            with open(json_path, "r") as f:
+                data = json5.load(f)
+                if "users" in data and isinstance(data["users"], list):
+                    for udata in data["users"]:
+                        if "sftpuser" in udata and isinstance(udata["sftpuser"], str):
+                            users_in_json.add(udata["sftpuser"])
+        
+        # vyčteme aktivní uživatele ze systému
+        active_users = listActiveUsers()
+        if active_users is None:
+            log.error("Failed to list active SFTP users.")
+            return False
+        
+        # porovnáme a odinstalujeme uživatele kteří jsou v systému ale nejsou v JSON souboru
+        success=True
+        for u in active_users:
+            if u.username not in users_in_json:
+                log.info(f"User {u.username} is not in JSON file, uninstalling.")
+                if not __uninstallUser(u):
+                    success=False
+            else:
+                log.info(f"User {u.username} is in JSON file, keeping installed.")
+                
+        smbHelp.reloadSystemdDaemon()
+        return success
+    except Exception as e:
+        log.error(f"Failed to uninstall unwanted SFTP users: {e}")
+        log.exception(e)
+        return False
+
+def check_config_valid(cfg: Dict) -> Tuple[bool, Optional[str]]:
+    """Otestuje základní validitu konfigurační struktury.
+
+    Otestuje přítomnost min jednoho usera, user musí mít min jeden mountpoint a min jeden certifikát.
+    U mountpointů se testuje validita labelu (pouze alfanumerické znaky, podtržítka a pomlčky) a validita cílové cesty (musí být absolutní cesta začínající / a existovat).
+
+    Args:
+        cfg: Konfigurační slovník k otestování - tzn načtený JSON
+    Returns:
+        Tuple[bool, Optional[str]]: První prvek je True pokud je konfigurace validní, jinak False. Druhý prvek je chybová zpráva pokud konfigurace není validní, jinak None.
+    """
+    users = cfg.get("users", [])
+    if not users:
+        return False, "Configuration must contain at least one user."
+    for usr in users:
+        username = usr.get("sftpuser")
+        if not username:
+            return False, "Each user must have a 'sftpuser' field."
+        mounts = usr.get("sftpmounts", {})
+        if not mounts:
+            return False, f"User '{username}' must have at least one mountpoint."
+        for label, path in mounts.items():
+            if not re.match(r"^[a-zA-Z0-9_\-]+$", label):
+                return False, f"Mountpoint label '{label}' for user '{username}' is invalid. Use only letters, numbers, underscores or hyphens."
+            if not os.path.isabs(path) or not os.path.exists(path):
+                return False, f"Mountpoint path '{path}' for user '{username}' is invalid. Must be an absolute path that exists."
+            # zkonvertuejeme na string pro případ že je Path
+            mounts[label] = str(path)
+            
+        keys = usr.get("sftpcerts", [])
+        if not keys:
+            return False, f"User '{username}' must have at least one public key or certificate."
+    return True, None
+
 def uninstallAllUsers()->bool:
     """Odinstaluje všechny sftpUserMng uživatele ze systému.
     Returns:
