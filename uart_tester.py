@@ -26,6 +26,10 @@ version = VERSION
 
 DEFAULT_BAUDRATE = 19200
 DEFAULT_TEST_LEN = 64
+DEFAULT_BYTESIZE = 8
+DEFAULT_PARITY = "N"
+DEFAULT_STOPBITS = 1
+DEFAULT_SERIAL_TIMEOUT = 0.2
 TIMEOUT = 2  # vteřiny pro čekání na odpověď
 HISTORY_FILE = os.path.expanduser("~/.serial_sender_history")
 
@@ -191,13 +195,33 @@ def run_test(
     return results
 
 
-def serialGet(port: str, baudrate: int, timeout: float = 0.2) -> Any | str:
+def serialGet(
+    port: str,
+    baudrate: int,
+    timeout: float = DEFAULT_SERIAL_TIMEOUT,
+    bytesize: int = DEFAULT_BYTESIZE,
+    parity: str = DEFAULT_PARITY,
+    stopbits: float = DEFAULT_STOPBITS,
+    xonxoff: bool = False,
+    rtscts: bool = False,
+    dsrdtr: bool = False,
+) -> Any | str:
     """Otevře sériový port."""
     if serial is None:
         return TXT_UART_ERR_MISSING_PYSERIAL
 
     try:
-        return serial.Serial(port, baudrate, timeout=timeout)
+        return serial.Serial(
+            port=port,
+            baudrate=baudrate,
+            bytesize=bytesize,
+            parity=parity,
+            stopbits=stopbits,
+            timeout=timeout,
+            xonxoff=xonxoff,
+            rtscts=rtscts,
+            dsrdtr=dsrdtr,
+        )
     except serial.SerialException as e:
         return TXT_UART_ERR_OPEN_PORT.format(port=port, err=e)
 
@@ -324,10 +348,26 @@ def runAs(
     port: str,
     baudrate: int = DEFAULT_BAUDRATE,
     transmitter: bool = True,
-    serial_timeout: float = 0.2,
+    serial_timeout: float = DEFAULT_SERIAL_TIMEOUT,
+    bytesize: int = DEFAULT_BYTESIZE,
+    parity: str = DEFAULT_PARITY,
+    stopbits: float = DEFAULT_STOPBITS,
+    xonxoff: bool = False,
+    rtscts: bool = False,
+    dsrdtr: bool = False,
 ) -> str | None:
     """Spustí tester v zadaném režimu."""
-    ser = serialGet(port, baudrate, timeout=serial_timeout)
+    ser = serialGet(
+        port,
+        baudrate,
+        timeout=serial_timeout,
+        bytesize=bytesize,
+        parity=parity,
+        stopbits=stopbits,
+        xonxoff=xonxoff,
+        rtscts=rtscts,
+        dsrdtr=dsrdtr,
+    )
 
     if isinstance(ser, str):
         return ser
@@ -370,6 +410,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=TXT_UART_ARG_RECEIVER_HELP,
     )
+    parser.add_argument(
+        "-p",
+        "--parity",
+        choices=["N", "E", "O", "M", "S"],
+        default=DEFAULT_PARITY,
+        help=TXT_UART_ARG_PARITY_HELP,
+    )
+    parser.add_argument(
+        "--bytesize",
+        type=int,
+        choices=[5, 6, 7, 8],
+        default=DEFAULT_BYTESIZE,
+        help=TXT_UART_ARG_BYTESIZE_HELP.format(bytesize=DEFAULT_BYTESIZE),
+    )
+    parser.add_argument(
+        "--stopbits",
+        type=float,
+        choices=[1, 1.5, 2],
+        default=DEFAULT_STOPBITS,
+        help=TXT_UART_ARG_STOPBITS_HELP.format(stopbits=DEFAULT_STOPBITS),
+    )
+    parser.add_argument(
+        "-t",
+        "--timeout",
+        type=float,
+        default=DEFAULT_SERIAL_TIMEOUT,
+        help=TXT_UART_ARG_TIMEOUT_HELP.format(timeout=DEFAULT_SERIAL_TIMEOUT),
+    )
     return parser
 
 
@@ -379,7 +447,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    ret = runAs(args.port, args.baudrate, not args.receiver)
+    ret = runAs(
+        args.port,
+        args.baudrate,
+        not args.receiver,
+        serial_timeout=args.timeout,
+        bytesize=args.bytesize,
+        parity=args.parity,
+        stopbits=args.stopbits,
+    )
     chyba = False
     if ret:
         print(ret)
