@@ -26,6 +26,7 @@ version = VERSION
 
 DEFAULT_BAUDRATE = 19200
 DEFAULT_TEST_LEN = 64
+DEFAULT_TEST_REPEAT = 1
 DEFAULT_BYTESIZE = 8
 DEFAULT_PARITY = "N"
 DEFAULT_STOPBITS = 1
@@ -45,11 +46,15 @@ def generate_test_text(length: int) -> str:
     return (base * ((length // len(base)) + 1))[:length]
 
 
+def build_test_command(length: int, repeat: int = DEFAULT_TEST_REPEAT) -> str:
+    return f"test{length}n{repeat}"
+
+
 def parse_command(line: str) -> tuple[int | None, int | None]:
     match = re.match(r"^test(?P<len>\d+)?(?:n(?P<rep>\d+))?$", line.strip().lower())
     if match:
         length = int(match.group("len")) if match.group("len") else DEFAULT_TEST_LEN
-        repeat = int(match.group("rep")) if match.group("rep") else 1
+        repeat = int(match.group("rep")) if match.group("rep") else DEFAULT_TEST_REPEAT
         return length, repeat
     return None, None
 
