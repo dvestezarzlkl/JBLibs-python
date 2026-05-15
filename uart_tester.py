@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from .lng.default import *
+from .helper import loadLng
+
+loadLng()
+
 import argparse
 import atexit
 import hashlib
@@ -47,13 +52,13 @@ def parse_command(line: str) -> tuple[int | None, int | None]:
 
 def validate_test_params(length: int, repeat: int) -> str | None:
     if length < 1:
-        return "[ERROR] Délka musí být větší než 0."
+        return TXT_UART_ERR_LEN_MIN
     if length > 1024:
-        return "[ERROR] Délka je příliš velká (max 1024)."
+        return TXT_UART_ERR_LEN_MAX
     if repeat < 1:
-        return "[ERROR] Počet opakování musí být větší než 0."
+        return TXT_UART_ERR_REPEAT_MIN
     if repeat > 100:
-        return "[ERROR] Počet opakování je příliš velký (max 100)."
+        return TXT_UART_ERR_REPEAT_MAX
     return None
 
 
@@ -121,7 +126,14 @@ def send_and_wait_for_response(
     ln = len(full_msg)
     attempt_label = str(attempt).rjust(3)
 
-    print(f"[SEND {attempt_label}] bytes: {ln} (hash: {expected_hash})", end="     ")
+    print(
+        TXT_UART_SEND_STATUS.format(
+            attempt=attempt_label,
+            length=ln,
+            hash=expected_hash,
+        ),
+        end="     ",
+    )
 
     start_time = time.time()
     while time.time() - start_time < timeout:
@@ -137,18 +149,24 @@ def send_and_wait_for_response(
 
                 if received_hash == computed_hash:
                     if data == payload:
-                        print(f"[OK   {attempt_label}] Hash i obsah odpovídá.")
+                        print(f"[OK   {attempt_label}] {TXT_UART_OK_HASH_CONTENT}")
                         return True
-                    print(f"[FAIL {attempt_label}] Hash OK - CHYBA obsahu.")
+                    print(f"[FAIL {attempt_label}] {TXT_UART_FAIL_HASH_CONTENT}")
                     return False
 
-                print(f"[FAIL {attempt_label}] Hash CHYBA {received_hash} != {computed_hash}")
+                print(
+                    f"[FAIL {attempt_label}] "
+                    + TXT_UART_FAIL_HASH.format(
+                        received_hash=received_hash,
+                        computed_hash=computed_hash,
+                    )
+                )
                 return False
             except ValueError:
-                print(f"[FAIL {attempt_label}] Neplatný formát odpovědi: {line}")
+                print(f"[FAIL {attempt_label}] {TXT_UART_FAIL_INVALID_RESPONSE.format(line=line)}")
                 return False
 
-    print(f"[TIMEOUT {attempt_label}] Nebyla přijata žádná odpověď.")
+    print(f"[TIMEOUT {attempt_label}] {TXT_UART_TIMEOUT}")
     return False
 
 
@@ -176,12 +194,12 @@ def run_test(
 def serialGet(port: str, baudrate: int, timeout: float = 0.2) -> Any | str:
     """Otevře sériový port."""
     if serial is None:
-        return "[ERROR] Chybí knihovna pyserial. Nainstaluj ji příkazem: pip install pyserial"
+        return TXT_UART_ERR_MISSING_PYSERIAL
 
     try:
         return serial.Serial(port, baudrate, timeout=timeout)
     except serial.SerialException as e:
-        return f"[ERROR] Nelze otevřít port {port}: {e}"
+        return TXT_UART_ERR_OPEN_PORT.format(port=port, err=e)
 
 
 def receiver_mode(ser: Any, clear_screen: bool = True) -> str | None:
@@ -189,10 +207,10 @@ def receiver_mode(ser: Any, clear_screen: bool = True) -> str | None:
     if clear_screen:
         cls()
 
-    print(f"[INFO] Serial tester - Receiver {VERSION} by dvestezar.cz")
-    print(f"[INFO] Port: {ser.port} @ {ser.baudrate} baud\n")
-    print("[RECEIVER] Režim příjmu aktivní. Čekám na zprávy...")
-    print("[RECEIVER] Ukonči pomocí Ctrl+C\n")
+    print(TXT_UART_RECEIVER_TITLE.format(version=VERSION))
+    print(TXT_UART_INFO_PORT.format(port=ser.port, baudrate=ser.baudrate) + "\n")
+    print(TXT_UART_RECEIVER_ACTIVE)
+    print(TXT_UART_RECEIVER_EXIT_HINT + "\n")
 
     try:
         while True:
@@ -203,18 +221,18 @@ def receiver_mode(ser: Any, clear_screen: bool = True) -> str | None:
             ln = len(line)
 
             if line.startswith("test_"):
-                print(f"[IN ] bytes received: {ln}", end="     ")
+                print(TXT_UART_IN_BYTES_RECEIVED.format(length=ln), end="     ")
                 payload = line[5:]
                 hash_val = get_hash128(payload)
                 resp = f"resp_{payload}_{hash_val}"
                 ser.write((resp + "\r\n").encode())
                 ser.flush()
                 ln = len(resp)
-                print(f"[OUT] bytes sent: {ln}, hash: {hash_val}")
+                print(TXT_UART_OUT_BYTES_SENT.format(length=ln, hash=hash_val))
             else:
                 print(f"[IN ] {line}")
     except KeyboardInterrupt:
-        return "[RECEIVER] Ukončeno uživatelem."
+        return TXT_UART_RECEIVER_STOPPED
 
 
 def cls() -> None:
@@ -225,26 +243,26 @@ def header(ser: Any, clear: bool = True) -> None:
     if clear:
         cls()
     print("*" * 70)
-    print(f"********** Serial tester - Sender {VERSION} by dvestezar.cz **********")
+    print(TXT_UART_SENDER_TITLE.format(version=VERSION))
     print("*" * 70)
-    print(f"[INFO] Port: {ser.port} @ {ser.baudrate} baud")
-    print("Zadej příkaz 'test[<len>][n<repeat>]' nebo 'exit'.")
-    print("Pro nápovědu zadej 'help'.")
-    print("Pro spuštění režimu příjmu zadej 'rcv'.")
+    print(TXT_UART_INFO_PORT.format(port=ser.port, baudrate=ser.baudrate))
+    print(TXT_UART_HEADER_CMD_HINT)
+    print(TXT_UART_HEADER_HELP_HINT)
+    print(TXT_UART_HEADER_RCV_HINT)
     print("\n")
 
 
 def print_help() -> None:
-    print("\n*** Dostupné příkazy: ***")
-    print("  test              → syntaxe = test[<len>][n<repeat>]")
-    print("  - test              → odešle 64 znaků (defaultní test)")
-    print("  - test120           → odešle 120 znaků")
-    print("  - test80n5          → odešle 80 znaků, opakuje 5x")
-    print("  - testn3            → odešle 64 znaků, opakuje 3x")
-    print("  rcv               → spustí režim příjmu")
-    print("  cls               → smaže obrazovku")
-    print("  exit              → ukončí skript")
-    print("  help              → zobrazí tento přehled\n")
+    print(TXT_UART_HELP_TITLE)
+    print(TXT_UART_HELP_SYNTAX)
+    print(TXT_UART_HELP_TEST_DEFAULT)
+    print(TXT_UART_HELP_TEST_LEN)
+    print(TXT_UART_HELP_TEST_REPEAT)
+    print(TXT_UART_HELP_TEST_REPEAT_DEFAULT)
+    print(TXT_UART_HELP_RCV)
+    print(TXT_UART_HELP_CLS)
+    print(TXT_UART_HELP_EXIT)
+    print(TXT_UART_HELP_HELP)
 
 
 def transmitter_mode(ser: Any, use_history: bool = True) -> None:
@@ -266,10 +284,10 @@ def transmitter_mode(ser: Any, use_history: bool = True) -> None:
             header(ser)
             continue
         if command == "rcv":
-            print("--- >>> Spouštím režim příjmu...")
+            print(TXT_UART_SWITCH_TO_RCV)
             if x := receiver_mode(ser):
                 print(x)
-            print("--- <<< Návrat do odesílacího režimu.")
+            print(TXT_UART_BACK_TO_TX)
             time.sleep(1)
             header(ser)
             continue
@@ -284,12 +302,12 @@ def transmitter_mode(ser: Any, use_history: bool = True) -> None:
                 print(error)
                 continue
 
-            print(f"[INFO] Odesílám testovací zprávy ({length} znaků, {repeat}x)...")
+            print(TXT_UART_SENDING_TEST.format(length=length, repeat=repeat))
             try:
                 run_test(ser, length, repeat)
-                input("Pro pokračování stiskněte ENTER...")
+                input(TXT_UART_PRESS_ENTER)
             except KeyboardInterrupt:
-                print("\n[INFO] Ukončeno uživatelem.")
+                print(TXT_UART_STOPPED_BY_USER)
                 time.sleep(1)
             header(ser)
         else:
@@ -321,12 +339,12 @@ def runAs(
         else:
             error = receiver_mode(ser)
     except Exception as e:
-        error = f"[ERROR] Došlo k chybě: {e}"
+        error = TXT_UART_ERR_OCCURRED.format(err=e)
     finally:
         try:
             ser.close()
         except Exception as e:
-            close_error = f"[ERROR] Nelze zavřít port: {e}"
+            close_error = TXT_UART_ERR_CLOSE_PORT.format(err=e)
             if error:
                 return f"{error}\n{close_error}"
             return close_error
@@ -336,21 +354,21 @@ def runAs(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Odesílá testovací zprávy na sériový port a ověřuje odpovědi."
+        description=TXT_UART_ARG_DESCRIPTION
     )
-    parser.add_argument("port", help="Sériový port, např. /dev/ttyS3")
+    parser.add_argument("port", help=TXT_UART_ARG_PORT_HELP)
     parser.add_argument(
         "-b",
         "--baudrate",
         type=int,
         default=DEFAULT_BAUDRATE,
-        help=f"Rychlost v baudech (default: {DEFAULT_BAUDRATE})",
+        help=TXT_UART_ARG_BAUDRATE_HELP.format(baudrate=DEFAULT_BAUDRATE),
     )
     parser.add_argument(
         "-r",
         "--receiver",
         action="store_true",
-        help="Spustit jako receiver (příjemce zpráv)",
+        help=TXT_UART_ARG_RECEIVER_HELP,
     )
     return parser
 
@@ -367,7 +385,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(ret)
         chyba = True
 
-    print("Ukončuji.")
+    print(TXT_UART_EXITING)
     if chyba:
         sys.exit(1)
 
