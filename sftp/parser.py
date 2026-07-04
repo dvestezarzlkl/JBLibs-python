@@ -22,6 +22,10 @@ from typing import Dict,Optional,Tuple
 _DEFAULT_CONFIG_ETC_DIR_ = "jb_sftpmanager"
 _DEFAULT_CONFIG_NAME_ = "config"
 _DEFAULT_CONFIG_EXT_ = "jsonc"
+_MAIL_RGX = re.compile(
+    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
+)
 
 class mountpointPerms:
     def __init__(self,row:dict)->None:
@@ -310,7 +314,9 @@ def createJson(overwrite:bool=False)->bool:
     if b and not overwrite:
         log.info(f"Output JSON file already exists: {f}. Use overwrite=True to overwrite it.")
         return False
-    elif not b:
+    elif b:
+        file = f
+    else:
         file=getDefaultEtcConfigPath()
         log.info(f"No output JSON file specified, using default path: {file}.")
     
@@ -329,7 +335,28 @@ def createJson(overwrite:bool=False)->bool:
         log.error("Failed to list active SFTP users.")
         return False
     
+    current_cfg = {}
+    b, cfg_path = check_config_exists()
+    if b and os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r") as f:
+                current_cfg = json5.load(f)
+        except Exception as e:
+            log.warning(f"Failed to load existing config for metadata export: {e}")
+            current_cfg = {}
+
     data = {"users": []}
+    admin_mail = current_cfg.get("adminMail")
+    if isinstance(admin_mail, str) and _MAIL_RGX.match(admin_mail.strip()):
+        data["adminMail"] = admin_mail.strip()
+
+    existing_users = {}
+    for item in current_cfg.get("users", []):
+        if isinstance(item, dict):
+            username = item.get("sftpuser")
+            if isinstance(username, str):
+                existing_users[username] = item
+
     log.info(f"Found {len(users)} active SFTP users to export.")
     for u in users:
         log.info(f"Processing user {u.username} for JSON export.")
@@ -339,6 +366,10 @@ def createJson(overwrite:bool=False)->bool:
                 "sftpmounts": {},
                 "sftpcerts": list(u.certificates)
             }
+            prev_user = existing_users.get(u.username, {})
+            user_mail = prev_user.get("mail")
+            if isinstance(user_mail, str) and _MAIL_RGX.match(user_mail.strip()):
+                user_data["mail"] = user_mail.strip()
             for mp in u.getMountpoints():
                 nm=mp.mountName
                 user_data["sftpmounts"][nm] = mp.realPath
@@ -461,6 +492,10 @@ def check_config_valid(cfg: Dict) -> Tuple[bool, Optional[str]]:
     users = cfg.get("users", [])
     if not users:
         return False, "Configuration must contain at least one user."
+    admin_mail = cfg.get("adminMail")
+    if admin_mail is not None:
+        if not isinstance(admin_mail, str) or not _MAIL_RGX.match(admin_mail.strip()):
+            return False, "Configuration contains an invalid 'adminMail' address."
     for usr in users:
         username = usr.get("sftpuser")
         if not username:
@@ -479,6 +514,10 @@ def check_config_valid(cfg: Dict) -> Tuple[bool, Optional[str]]:
         keys = usr.get("sftpcerts", [])
         if not keys:
             return False, f"User '{username}' must have at least one public key or certificate."
+        user_mail = usr.get("mail")
+        if user_mail is not None:
+            if not isinstance(user_mail, str) or not _MAIL_RGX.match(user_mail.strip()):
+                return False, f"User '{username}' has an invalid 'mail' address."
     return True, None
 
 def uninstallAllUsers()->bool:
