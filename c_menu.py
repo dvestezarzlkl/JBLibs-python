@@ -444,6 +444,7 @@ class c_menu_block_items:
         if item is None:
             return self
         self._l.append(self._sanitizeItem(item))
+        return self
         
     def extend(self,items:Union[str,'c_menu_block_items',List[Union[str,Tuple[str,str]]]]) -> 'c_menu_block_items':
         """Přidá položky do seznamu
@@ -1768,4 +1769,3 @@ def printBlock(
     
     """
     return c_menu.printBlok(title_items, subTitle_items, charObal, leftRightLength, charSubtitle, eof, space_between_texts, min_width, rightTxBrackets, outToList)
-
