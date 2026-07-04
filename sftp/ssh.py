@@ -294,23 +294,34 @@ def restart_sshd()->bool:
     """
     log.info("Restarting sshd service")
     
-    s=c_service("ssh")
-    if s.exists() is False:
-        log.error(" < sshd service does not exist on this system.")
+    s = None
+    for service_name in ("ssh", "sshd"):
+        try:
+            service = c_service(service_name)
+        except Exception as e:
+            log.debug(f" - Failed to initialize {service_name} service manager: {e}")
+            continue
+        if service.exists():
+            s = service
+            break
+
+    if s is None:
+        log.error(" < ssh/sshd service does not exist on this system.")
         return False
     # if not s.enabled(): # netestuejem, museli by jsme testovat 'ssh.socket' 
     #     log.info(" < sshd service is not enabled. Enabling it.")
     #     return False
     if s.running():
-        log.info(" - Stopping sshd service before restart.")
+        log.info(f" - Restarting {s.fullName}.")
         if not s.restart():
-            log.error(" < Failed to stop sshd service before restart.")
+            log.error(f" < Failed to restart {s.fullName}.")
             return False
     else:
-        log.info(" - sshd service is not running. Starting it.")
+        log.info(f" - {s.fullName} is not running. Starting it.")
         if not s.start():
-            log.error(" < Failed to start sshd service.")
+            log.error(f" < Failed to start {s.fullName}.")
             return False
+    return True
 
 def generate_ssh_ed25519_keypair(comment: str = "default_user") -> Tuple[bool, Tuple[str, str] | str]:
     """Vygeneruje SSH key pair typu Ed25519.
@@ -358,4 +369,3 @@ def generate_ssh_ed25519_keypair(comment: str = "default_user") -> Tuple[bool, T
 
     except Exception as e:
         return False, f"Failed to generate Ed25519 SSH key pair: {e}"
-    
