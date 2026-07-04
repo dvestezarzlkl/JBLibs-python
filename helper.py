@@ -1,6 +1,6 @@
 # cspell:ignore levelname,HLPR,STPENA,STPDIS,geteuid
 from .lng.default import *
-import os, platform,sys,logging,subprocess,inspect,hashlib,pwd
+import os, platform,sys,logging,subprocess,inspect,hashlib,pwd,tempfile,time
 from importlib import util
 from typing import Union,Callable,Union,Tuple
 import configparser,re,psutil
@@ -581,6 +581,68 @@ def load_config(
             return
         vars = {key: parse_ini_value(config['globals'][key].strip('"')) for key in config['globals']}
         __updateGlob(caller_module,vars)
+
+
+def save_config(
+        config_module,
+        fromEtc: bool = False,
+        configName: str = "config.ini",
+        appName: str = None
+    ) -> None:
+    """Persist a module-backed config.ini using the same target path rules as load_config."""
+    log=getMyLog()
+
+    config_path = getConfigPath(
+        fromEtc=fromEtc,
+        configName=configName,
+        appName=appName,
+        createIfNotExist=True
+    )
+
+    module_dict = getattr(config_module, "__dict__", {})
+    exclude = {"VERSION", "MAIN_TITLE"}
+    globals_data = {}
+    for key, value in module_dict.items():
+        if not isinstance(key, str) or not key:
+            continue
+        if key.startswith("__") or key in exclude:
+            continue
+        if not key[0].isupper():
+            continue
+        if callable(value):
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            globals_data[key] = str(value)
+        elif isinstance(value, bool):
+            globals_data[key] = "true" if value else "false"
+        elif value is None:
+            globals_data[key] = "null"
+        else:
+            globals_data[key] = f'"{value}"'
+
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    parser["globals"] = globals_data
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_fd, temp_path = tempfile.mkstemp(dir=str(config_path.parent), text=True)
+    try:
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as fh:
+            parser.write(fh)
+
+        if config_path.exists():
+            backup_path = config_path.with_name(f"{config_path.name}.bak.{int(time.time())}")
+            os.replace(config_path, backup_path)
+
+        os.replace(temp_path, config_path)
+        log.debug(f"Saved config to {config_path}")
+    except Exception as e:
+        log.error(f"Failed to save config to {config_path}: {e}")
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
     
     
 def parse_ini_value(value:str)->Union[int,float,str,None]:
