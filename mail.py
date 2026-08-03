@@ -5,7 +5,7 @@ import mimetypes
 import re
 import smtplib
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email.message import EmailMessage
 from pathlib import Path
 from typing import BinaryIO, Iterable, Optional, Sequence, Tuple, Union
@@ -28,7 +28,7 @@ class SmtpSettings:
     port: int
     mode: str = "starttls"
     username: str = ""
-    password: str = ""
+    password: str = field(default="", repr=False)
     timeout: int = 20
 
     def validate(self) -> Tuple[bool, Optional[str]]:
@@ -165,6 +165,14 @@ def unique_addresses(addresses: Iterable[str]) -> list[str]:
     return unique
 
 
+def _redact_secrets(text: str, secrets: Iterable[str]) -> str:
+    redacted = str(text)
+    for secret in secrets:
+        if isinstance(secret, str) and secret:
+            redacted = redacted.replace(secret, "***")
+    return redacted
+
+
 def create_zip_attachment(
     filename: str,
     items: Sequence[ZipItem],
@@ -256,7 +264,8 @@ def send_message(
 ) -> Tuple[bool, Optional[str]]:
     """Send a message using explicit SMTP settings.
 
-    Returns ``(True, None)`` on success and never logs or exposes the password.
+    Returns ``(True, None)`` on success. The SMTP password is hidden from the
+    settings representation and redacted from transport errors.
     """
 
     ok, error = smtp_settings.validate()
@@ -302,6 +311,7 @@ def send_message(
                 to_addrs=envelope_recipients,
             )
     except Exception as exc:
-        return False, f"Failed to send mail via SMTP: {exc}"
+        error_text = _redact_secrets(str(exc), [smtp_settings.password])
+        return False, f"Failed to send mail via SMTP: {error_text}"
 
     return True, None
