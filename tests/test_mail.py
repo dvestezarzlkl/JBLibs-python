@@ -34,8 +34,13 @@ class FakeSMTP:
         self.calls.append(("send_message", message, from_addr, to_addrs))
 
 
+class FailingSMTP(FakeSMTP):
+    def login(self, username, password):
+        raise RuntimeError(f"authentication failed for password {password}")
+
+
 class MailTests(unittest.TestCase):
-    def test_smtp_settings_validation(self):
+    def test_smtp_settings_validation_and_hidden_password_repr(self):
         self.assertEqual(mail.SmtpSettings("", 25).validate()[0], False)
         self.assertEqual(mail.SmtpSettings("smtp.example.test", 0).validate()[0], False)
         self.assertEqual(
@@ -46,10 +51,15 @@ class MailTests(unittest.TestCase):
             mail.SmtpSettings("smtp.example.test", 25, username="user").validate()[0],
             False,
         )
-        self.assertEqual(
-            mail.SmtpSettings("smtp.example.test", 25, mode="plain").validate(),
-            (True, None),
+        settings = mail.SmtpSettings(
+            "smtp.example.test",
+            25,
+            mode="plain",
+            username="user",
+            password="secret-value",
         )
+        self.assertEqual(settings.validate(), (True, None))
+        self.assertNotIn("secret-value", repr(settings))
 
     def test_build_message_with_bytes_attachment_and_bcc_envelope(self):
         attachment = mail.MailAttachment.from_bytes(
@@ -175,6 +185,29 @@ class MailTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertFalse(any(call[0] == "starttls" for call in fake.calls))
         self.assertFalse(any(call[0] == "login" for call in fake.calls))
+
+    def test_send_message_redacts_password_from_error(self):
+        password = "top-secret-password"
+        fake = FailingSMTP("smtp.example.test", 587, 20)
+        with patch("mail.smtplib.SMTP", return_value=fake):
+            ok, error = mail.send_message(
+                smtp_settings=mail.SmtpSettings(
+                    "smtp.example.test",
+                    587,
+                    mode="starttls",
+                    username="user",
+                    password=password,
+                ),
+                mail_from="sender@example.test",
+                recipients=["recipient@example.test"],
+                subject="Subject",
+                body="Body",
+            )
+
+        self.assertFalse(ok)
+        self.assertIsNotNone(error)
+        self.assertNotIn(password, error)
+        self.assertIn("***", error)
 
 
 if __name__ == "__main__":
