@@ -5,6 +5,7 @@
   - top-level `adminMail`
   - per-user `mail`
 - `check_config_valid()` should validate optional mail fields when present, but not require them.
+- Validation messages returned by `check_config_valid()` are user-visible and must use the relative `sftp/lng/default.py` catalog with locale overrides loaded through `loadLng()`; technical parser logs may remain in English.
 - `createJson()` should preserve `adminMail` and per-user `mail` metadata when rebuilding config from active users.
 - `ssh.py` owns SSHD helpers.
   - `restart_sshd()` must support both `ssh` and `sshd` service names and return a real boolean result.

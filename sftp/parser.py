@@ -1,4 +1,8 @@
-from ..helper import getLogger
+from .lng.default import *
+from ..helper import getLogger, loadLng
+
+loadLng()
+
 log = getLogger("sftp.parser")
 """Pro SFTP manager parsing a uživatelskou správu.
 
@@ -508,33 +512,33 @@ def check_config_valid(cfg: Dict) -> Tuple[bool, Optional[str]]:
     """
     users = cfg.get("users", [])
     if not users:
-        return False, "Configuration must contain at least one user."
+        return False, TXT_SFTP_PARSER_CONFIG_USER_REQUIRED
     admin_mail = cfg.get("adminMail")
     if admin_mail is not None:
         if not isinstance(admin_mail, str) or not _MAIL_RGX.match(admin_mail.strip()):
-            return False, "Configuration contains an invalid 'adminMail' address."
+            return False, TXT_SFTP_PARSER_INVALID_ADMIN_MAIL
     for usr in users:
         username = usr.get("sftpuser")
         if not username:
-            return False, "Each user must have a 'sftpuser' field."
+            return False, TXT_SFTP_PARSER_USER_FIELD_REQUIRED
         mounts = usr.get("sftpmounts", {})
         if not mounts:
-            return False, f"User '{username}' must have at least one mountpoint."
+            return False, TXT_SFTP_PARSER_USER_MOUNT_REQUIRED.format(username=username)
         for label, path in mounts.items():
             if not re.match(r"^[a-zA-Z0-9_\-]+$", label):
-                return False, f"Mountpoint label '{label}' for user '{username}' is invalid. Use only letters, numbers, underscores or hyphens."
+                return False, TXT_SFTP_PARSER_MOUNT_LABEL_INVALID.format(label=label, username=username)
             if not os.path.isabs(path) or not os.path.exists(path):
-                return False, f"Mountpoint path '{path}' for user '{username}' is invalid. Must be an absolute path that exists."
+                return False, TXT_SFTP_PARSER_MOUNT_PATH_INVALID.format(path=path, username=username)
             # zkonvertuejeme na string pro případ že je Path
             mounts[label] = str(path)
             
         keys = usr.get("sftpcerts", [])
         if not keys:
-            return False, f"User '{username}' must have at least one public key or certificate."
+            return False, TXT_SFTP_PARSER_USER_KEY_REQUIRED.format(username=username)
         user_mail = usr.get("mail")
         if user_mail is not None:
             if not isinstance(user_mail, str) or not _MAIL_RGX.match(user_mail.strip()):
-                return False, f"User '{username}' has an invalid 'mail' address."
+                return False, TXT_SFTP_PARSER_INVALID_USER_MAIL.format(username=username)
     return True, None
 
 def uninstallAllUsers()->bool:
