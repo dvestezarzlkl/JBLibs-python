@@ -78,33 +78,32 @@ class mountpointsManager:
             raise RuntimeError(f"Mountpoint {mount_point.mountName} does not exist for user {self.username}.")
         
         if mp_to_delete.isSambaVault():
-            # smažeme mountpoint přes sambu
             try:
                 smb.removeSharePoint(self.username, mp_to_delete)
             except Exception as e:
-                raise RuntimeError(f"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}")
-        
+                raise RuntimeError(f"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}") from e
         else:
             try:
-                if mount_point.isMounted():
-                    # zkontrolujeme, zda je možné bezpečně odmountovat
-                    if not can_umount(mount_point.mountPath):
+                if mp_to_delete.isMounted():
+                    if not can_umount(mp_to_delete.mountPath):
                         raise RuntimeError(f"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.")
                     try:
                         subprocess.run(["umount", mp_to_delete.mountPath], check=True)
-                    except subprocess.CalledProcessError as e:
+                    except subprocess.CalledProcessError:
                         log.debug(f"Initial umount failed for {mp_to_delete.mountPath}, retrying after delay")
-                        time.sleep(2)  # počkáme chvíli a zkusíme to znovu
+                        time.sleep(2)
                         subprocess.run(["umount", mp_to_delete.mountPath], check=True)
-                        
-                
+
                 if mp_to_delete.mountExists():
                     os.rmdir(mp_to_delete.mountPath)
-                    
-                self.mountpoints.remove(mp_to_delete)
-                self.__saveMountpoints() # jen pokud nic neselže jinak znovu proběhnou kroky výše
             except Exception as e:
-                raise RuntimeError(f"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}")
+                raise RuntimeError(f"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}") from e
+
+        try:
+            self.mountpoints.remove(mp_to_delete)
+            self.__saveMountpoints()
+        except Exception as e:
+            raise RuntimeError(f"Mountpoint {mount_point.mountName} was removed but its management file could not be updated: {e}") from e
  
     def umount_will_be_ok(self) -> bool:
         """Zkontroluje, zda je možné bezpečně odmountovat všechny mountpointy uživatele.

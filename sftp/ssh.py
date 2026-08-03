@@ -103,7 +103,11 @@ def __write_sshd_config(user, jail)-> str|None:
     path = os.path.join(SSHD_DIR, f"sftp-{user}.conf")
 
     try:
-        authKey = os.path.join( ensureSSHDir(user, create=False) or "/home/"+user+"/.ssh", "authorized_keys")
+        ssh_dir = ensureSSHDir(user, create=True)
+        if ssh_dir is None:
+            log.error(f" < Failed to ensure .ssh directory for user {user}.")
+            return None
+        authKey = os.path.join(ssh_dir, "authorized_keys")
         content = TPL.format(user=user, jail=jail, authKey=authKey)
         log.info(f" - Writing sshd config for user {user} to {path}.")
         with open(path, "w") as f:
