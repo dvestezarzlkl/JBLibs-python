@@ -158,13 +158,30 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
             if "pointsSet" in data and isinstance(data["pointsSet"], dict):
                 log.info(f" - Found mountpoint permissions for user {username}.")
                 mpSet=mountpointsPerms(data["pointsSet"])
-            
-            
+
+            desired_mounts = data.get("sftpmounts", {})
+            if not isinstance(desired_mounts, dict):
+                log.error(f"Invalid 'sftpmounts' property for user {username}: must be an object.")
+                continue
+
+            for existing_mount in u.mountpointManager.getMountpoints():
+                desired_path = desired_mounts.get(existing_mount.mountName)
+                path_changed = desired_path is not None and str(desired_path) != existing_mount.realPath
+                mode_changed = existing_mount.isSambaVault() != sambaVault
+                if desired_path is None or path_changed or mode_changed:
+                    reason = "removed from configuration"
+                    if path_changed:
+                        reason = "real path changed"
+                    elif mode_changed:
+                        reason = "mount type changed"
+                    log.info(f" - Removing mountpoint '{existing_mount.mountName}' for user {username}: {reason}.")
+                    u.mountpointManager.deleteMountpoint(existing_mount.mountName)
+
             # přidáme mountpointy
             log.info(f"Adding mountpoints for user {username}.")
-            if "sftpmounts" in data and isinstance(data["sftpmounts"], dict):
-                log.info(f" - Found {len(data['sftpmounts'])} mountpoints to add for user {username}.")
-                for mount_name, real_path in data["sftpmounts"].items():
+            if desired_mounts:
+                log.info(f" - Found {len(desired_mounts)} mountpoints to add for user {username}.")
+                for mount_name, real_path in desired_mounts.items():
                     log.info(f"   - Processing mountpoint '{mount_name}': '{real_path}'")
                     if not isinstance(mount_name, str) or not isinstance(real_path, str):
                         log.error(f"Invalid mountpoint entry for user {username}: mount_name and real_path must be strings.")

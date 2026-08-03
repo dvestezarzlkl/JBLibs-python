@@ -684,12 +684,13 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
         
         smbHelp.toMount.append(cifs_path)        
     except Exception as e:
-        msg=f"Failed to ensure Samba SFTP mount point: {e}"
+        msg = f"Failed to ensure Samba SFTP mount point: {e}"
         log.error(msg)
         log.exception(e)
-        log.info(f" - Cleaning up Samba SFTP")
-    
-    log.info(f"< Samba SFTP mount point {cifs_path} mounted successfully.")
+        log.info(" - Cleaning up Samba SFTP")
+        raise RuntimeError(msg) from e
+
+    log.info(f"< Samba SFTP mount point {cifs_path} prepared successfully.")
     return cifs_path
     
 def postEnsureAllMountpoints()->None:
