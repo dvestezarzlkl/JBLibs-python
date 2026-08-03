@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "commit_message": "Fix SFTP Apply synchronization and error propagation",
+  "replacements": [
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.9\"",
+      "new": "__version__ = \"1.2.10\"",
+      "expected": 1
+    },
+    {
+      "path": "sftp/ssh.py",
+      "old": "    try:\n        authKey = os.path.join( ensureSSHDir(user, create=False) or \"/home/\"+user+\"/.ssh\", \"authorized_keys\")\n        content = TPL.format(user=user, jail=jail, authKey=authKey)\n",
+      "new": "    try:\n        ssh_dir = ensureSSHDir(user, create=True)\n        if ssh_dir is None:\n            log.error(f\" < Failed to ensure .ssh directory for user {user}.\")\n            return None\n        authKey = os.path.join(ssh_dir, \"authorized_keys\")\n        content = TPL.format(user=user, jail=jail, authKey=authKey)\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/sambaPoint.py",
+      "old": "    except Exception as e:\n        msg=f\"Failed to ensure Samba SFTP mount point: {e}\"\n        log.error(msg)\n        log.exception(e)\n        log.info(f\" - Cleaning up Samba SFTP\")\n    \n    log.info(f\"< Samba SFTP mount point {cifs_path} mounted successfully.\")\n    return cifs_path\n",
+      "new": "    except Exception as e:\n        msg = f\"Failed to ensure Samba SFTP mount point: {e}\"\n        log.error(msg)\n        log.exception(e)\n        log.info(\" - Cleaning up Samba SFTP\")\n        raise RuntimeError(msg) from e\n\n    log.info(f\"< Samba SFTP mount point {cifs_path} prepared successfully.\")\n    return cifs_path\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/mounts.py",
+      "old": "        if mp_to_delete.isSambaVault():\n            # smažeme mountpoint přes sambu\n            try:\n                smb.removeSharePoint(self.username, mp_to_delete)\n            except Exception as e:\n                raise RuntimeError(f\"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}\")\n        \n        else:\n            try:\n                if mount_point.isMounted():\n                    # zkontrolujeme, zda je možné bezpečně odmountovat\n                    if not can_umount(mount_point.mountPath):\n                        raise RuntimeError(f\"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.\")\n                    try:\n                        subprocess.run([\"umount\", mp_to_delete.mountPath], check=True)\n                    except subprocess.CalledProcessError as e:\n                        log.debug(f\"Initial umount failed for {mp_to_delete.mountPath}, retrying after delay\")\n                        time.sleep(2)  # počkáme chvíli a zkusíme to znovu\n                        subprocess.run([\"umount\", mp_to_delete.mountPath], check=True)\n                        \n                \n                if mp_to_delete.mountExists():\n                    os.rmdir(mp_to_delete.mountPath)\n                    \n                self.mountpoints.remove(mp_to_delete)\n                self.__saveMountpoints() # jen pokud nic neselže jinak znovu proběhnou kroky výše\n            except Exception as e:\n                raise RuntimeError(f\"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}\")\n",
+      "new": "        if mp_to_delete.isSambaVault():\n            try:\n                smb.removeSharePoint(self.username, mp_to_delete)\n            except Exception as e:\n                raise RuntimeError(f\"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}\") from e\n        else:\n            try:\n                if mp_to_delete.isMounted():\n                    if not can_umount(mp_to_delete.mountPath):\n                        raise RuntimeError(f\"Mountpoint {mount_point.mountName} is busy and cannot be unmounted.\")\n                    try:\n                        subprocess.run([\"umount\", mp_to_delete.mountPath], check=True)\n                    except subprocess.CalledProcessError:\n                        log.debug(f\"Initial umount failed for {mp_to_delete.mountPath}, retrying after delay\")\n                        time.sleep(2)\n                        subprocess.run([\"umount\", mp_to_delete.mountPath], check=True)\n\n                if mp_to_delete.mountExists():\n                    os.rmdir(mp_to_delete.mountPath)\n            except Exception as e:\n                raise RuntimeError(f\"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}\") from e\n\n        try:\n            self.mountpoints.remove(mp_to_delete)\n            self.__saveMountpoints()\n        except Exception as e:\n            raise RuntimeError(f\"Mountpoint {mount_point.mountName} was removed but its management file could not be updated: {e}\") from e\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "            if \"pointsSet\" in data and isinstance(data[\"pointsSet\"], dict):\n                log.info(f\" - Found mountpoint permissions for user {username}.\")\n                mpSet=mountpointsPerms(data[\"pointsSet\"])\n            \n            \n            # přidáme mountpointy\n",
+      "new": "            if \"pointsSet\" in data and isinstance(data[\"pointsSet\"], dict):\n                log.info(f\" - Found mountpoint permissions for user {username}.\")\n                mpSet=mountpointsPerms(data[\"pointsSet\"])\n\n            desired_mounts = data.get(\"sftpmounts\", {})\n            if not isinstance(desired_mounts, dict):\n                log.error(f\"Invalid 'sftpmounts' property for user {username}: must be an object.\")\n                continue\n\n            for existing_mount in u.mountpointManager.getMountpoints():\n                desired_path = desired_mounts.get(existing_mount.mountName)\n                path_changed = desired_path is not None and str(desired_path) != existing_mount.realPath\n                mode_changed = existing_mount.isSambaVault() != sambaVault\n                if desired_path is None or path_changed or mode_changed:\n                    reason = \"removed from configuration\"\n                    if path_changed:\n                        reason = \"real path changed\"\n                    elif mode_changed:\n                        reason = \"mount type changed\"\n                    log.info(f\" - Removing mountpoint '{existing_mount.mountName}' for user {username}: {reason}.\")\n                    u.mountpointManager.deleteMountpoint(existing_mount.mountName)\n\n            # přidáme mountpointy\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "            if \"sftpmounts\" in data and isinstance(data[\"sftpmounts\"], dict):\n                log.info(f\" - Found {len(data['sftpmounts'])} mountpoints to add for user {username}.\")\n                for mount_name, real_path in data[\"sftpmounts\"].items():\n",
+      "new": "            if desired_mounts:\n                log.info(f\" - Found {len(desired_mounts)} mountpoints to add for user {username}.\")\n                for mount_name, real_path in desired_mounts.items():\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/AGENTS.md",
+      "old": "- Keep SSH and SFTP helper changes small and composable so the menu layer can stay thin.\n",
+      "new": "- Keep SSH and SFTP helper changes small and composable so the menu layer can stay thin.\n- Use `smbHelp.checkCIFSInstalled()` for CIFS availability checks; missing CIFS must be reported before a Samba-backed Apply starts changing users.\n- `sambaPoint.ensureMountpoint()` must re-raise its original failure and must never continue with an uninitialized `cifs_path`.\n- Parser Apply is a synchronization operation: mountpoints removed from config, moved to another real path, or changed between bind and Samba must be removed before desired mountpoints are ensured.\n- SSHD config must use the real user home returned by the system and must create `.ssh` there instead of falling back to `/home/<user>`.\n",
+      "expected": 1
+    }
+  ]
+}
