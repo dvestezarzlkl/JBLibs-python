@@ -41,13 +41,13 @@
     {
       "path": "sftp/sambaPoint.py",
       "old": "def postEnsureAllMountpoints()->None:\n    \"\"\"Provede potřebné akce po zajištění všech mount pointů.\n    Zatím pouze restartuje Samba službu, pokud bylo potřeba.\n    \"\"\"\n    if smbHelp.requireSambaRestart:\n        log.info(\"Post-processing: Restarting Samba service as required.\")\n        if not restartSambaService():\n            log.error(\" < Failed to restart Samba service during post-processing of mount points.\")\n        else:\n            log.info(\"Samba service restarted successfully during post-processing of mount points.\")\n        smbHelp.requireSambaRestart = False\n    else:\n        log.info(\"Post-processing: No Samba service restart required.\")\n            \n    if smbHelp.toMount:\n        log.info(\"Post-processing: waiting 2 seconds.\")\n        time.sleep(2)  # počkáme chvilku, ať se systém stabilizuje\n        log.info(\"Post-processing: Reloading systemd daemon before mounting Samba SFTP mount points.\")\n        smbHelp.reloadSystemdDaemon()\n        log.info(\"Post-processing: waiting 3 seconds.\")\n        time.sleep(3)  # počkáme chvilku, ať se systém stabilizuje\n        log.info(\"Post-processing: Mounting Samba SFTP mount points.\")\n        for mnt in smbHelp.toMount:\n            log.info(f\"Post-processing: Ensuring mount of Samba SFTP mount point {mnt}.\")\n            try:\n                import subprocess\n                subprocess.run([\n                    \"mount\",\n                    mnt\n                ], check=True)\n                log.info(f\"Samba SFTP mount point {mnt} mounted successfully during post-processing.\")\n            except subprocess.CalledProcessError as e:\n                log.error(f\" < Failed to mount Samba SFTP mount point {mnt} during post-processing: {e}\")\n        smbHelp.toMount.clear()\n    else:\n        log.info(\"Post-processing: No Samba SFTP mount points to mount.\")\n        \ndef postRemoveAllMountpoints()->None:\n    \"\"\"Provede potřebné akce po odebrání všech mount pointů.    \n    Jen restartuje sambu pokud je potřeba, protože umount musí být proveden před odstraněním smaba pointů.\n    \n    POZOR: je potřeba zavolat smbHelp.reloadSystemdDaemon() na konci všech remove, pokud by jsme dali sem\n    tak u každého uživatele bude reloadovat a někdy to trvá i několik minut\n    \n    Takže se v kódu provede umount, odstraní se fstab a samba konfigurace a pak se zavolá tato funkce.\n    \n    \"\"\"\n    if smbHelp.requireSambaRestart:\n        log.info(\"Post-processing: Restarting Samba service as required after mount point removals.\")\n        if not restartSambaService():\n            log.error(\" < Failed to restart Samba service during post-processing of mount point removals.\")\n        else:\n            log.info(\"Samba service restarted successfully during post-processing of mount point removals.\")            \n        smbHelp.requireSambaRestart = False\n    else:\n        log.info(\"Post-processing: No Samba service restart required after mount point removals.\")\n        \n    log.info(f\"Remove MountPonits: Clearing mount point removal list  - count: {len(smbHelp.toRemove)}\")\n    try:\n        for mnt in smbHelp.toRemove:\n            if os.path.isdir(mnt):\n                log.info(f\"Post-processing: Removing mount point directory {mnt}.\")\n                try:\n                    os.rmdir(mnt)\n                    log.info(f\"Mount point directory {mnt} removed successfully during post-processing.\")\n                except Exception as e:\n                    log.error(f\" < Failed to remove mount point directory {mnt} during post-processing: {e}\")\n    except Exception as e:\n        log.error(f\" < Exception during post-processing of mount point removals: {e}\")\n        log.exception(e)\n        \n    smbHelp.toRemove.clear()\n        \n    log.info(\"Post-processing of mount point removals completed.\")",
-      "new": "def postEnsureAllMountpoints()->bool:\n    \"\"\"Dokončí připravené Samba/CIFS změny, nebo je odloží do konce aktivní dávky.\"\"\"\n    if smbHelp._batchDepth > 0:\n        log.info(\"Samba/CIFS post-processing deferred until the active batch is complete.\")\n        return True\n    return smbHelp.finalizeMountpointChanges()\n        \ndef postRemoveAllMountpoints()->bool:\n    \"\"\"Odstraní prázdné adresáře a dokončí změny, nebo service část odloží do konce dávky.\"\"\"\n    if not smbHelp.removeQueuedMountpointDirectories():\n        return False\n    if smbHelp._batchDepth > 0:\n        log.info(\"Samba/CIFS removal post-processing deferred until the active batch is complete.\")\n        return True\n    return smbHelp.finalizeMountpointChanges()",
+      "new": "def postEnsureAllMountpoints()->bool:\n    \"\"\"Dokončí připravené Samba/CIFS změny, nebo je odloží do konce aktivní dávky.\"\"\"\n    if smbHelp._batchDepth > 0:\n        log.info(\"Samba/CIFS post-processing deferred until the active batch is complete.\")\n        return True\n    return smbHelp.finalizeMountpointChanges()\n\ndef postRemoveAllMountpoints()->bool:\n    \"\"\"Odstraní prázdné adresáře a dokončí změny, nebo service část odloží do konce dávky.\"\"\"\n    if not smbHelp.removeQueuedMountpointDirectories():\n        return False\n    if smbHelp._batchDepth > 0:\n        log.info(\"Samba/CIFS removal post-processing deferred until the active batch is complete.\")\n        return True\n    return smbHelp.finalizeMountpointChanges()",
       "expected": 1
     },
     {
       "path": "sftp/mounts.py",
       "old": "        smb.postRemoveAllMountpoints()\n        ",
-      "new": "        if not smb.postRemoveAllMountpoints():\n            raise RuntimeError(\"Failed to finalize mountpoint removal changes.\")\n        ",
+      "new": "        if not smb.postRemoveAllMountpoints():\n            raise RuntimeError(\"Failed to finalize mountpoint removal changes.\")\n",
       "expected": 1
     },
     {
@@ -59,7 +59,7 @@
     {
       "path": "sftp/parser.py",
       "old": "    smb.postEnsureAllMountpoints()\n    # restart ssh je v hlavním volání    \n    log.info(f\"Finished processing JSON file {file}. Created/updated {len(ret)} users.\")\n",
-      "new": "    if not smb.postEnsureAllMountpoints():\n        log.error(\"Failed to queue Samba/CIFS mountpoint post-processing.\")\n    if not smb.smbHelp.endBatch():\n        log.error(\"Failed to finalize Samba/CIFS mountpoint changes.\")\n        return None\n    # restart ssh je v hlavním volání    \n    log.info(f\"Finished processing JSON file {file}. Created/updated {len(ret)} users.\")\n",
+      "new": "    if not smb.postEnsureAllMountpoints():\n        log.error(\"Failed to queue Samba/CIFS mountpoint post-processing.\")\n    if not smb.smbHelp.endBatch():\n        log.error(\"Failed to finalize Samba/CIFS mountpoint changes.\")\n        return None\n    # restart ssh je v hlavním volání\n    log.info(f\"Finished processing JSON file {file}. Created/updated {len(ret)} users.\")\n",
       "expected": 1
     },
     {
@@ -77,7 +77,7 @@
     {
       "path": "sftp/parser.py",
       "old": "                \n        smbHelp.reloadSystemdDaemon()\n        return success\n",
-      "new": "                \n        return success\n",
+      "new": "\n        return success\n",
       "expected": 1
     },
     {
@@ -89,7 +89,7 @@
     {
       "path": "sftp/parser.py",
       "old": "            \n    smbHelp.reloadSystemdDaemon()\n    return success",
-      "new": "            \n    return success",
+      "new": "\n    return success",
       "expected": 1
     }
   ]
