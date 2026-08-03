@@ -129,6 +129,7 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
         users.append(d)
     
     log.info(f"Creating {len(users)} SFTP users from JSON file {file}.")
+    smb.smbHelp.beginBatch()
     for data in users:
         try:
             log.info(f"Processing user data: {data.get('sftpuser','<unknown>')}")
@@ -266,8 +267,12 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
             log.error(f"Failed to create user from JSON data: {e}")
             log.exception(e)
     
-    smb.postEnsureAllMountpoints()
-    # restart ssh je v hlavním volání    
+    if not smb.postEnsureAllMountpoints():
+        log.error("Failed to queue Samba/CIFS mountpoint post-processing.")
+    if not smb.smbHelp.endBatch():
+        log.error("Failed to finalize Samba/CIFS mountpoint changes.")
+        return None
+    # restart ssh je v hlavním volání
     log.info(f"Finished processing JSON file {file}. Created/updated {len(ret)} users.")
     if len(ret) == 0:
         log.error("No users were created or updated from JSON data.")
@@ -418,10 +423,7 @@ def uninstallUser(username:str|sftpUserMng)->bool:
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
-    from .sambaPoint import smbHelp
-    __uninstallUser(username)
-    smbHelp.reloadSystemdDaemon()
-    return True
+    return __uninstallUser(username)
 
 def __uninstallUser(username:str|sftpUserMng)->bool:
     """Odinstaluje zadaného sftpUserMng uživatele ze systému.
@@ -454,7 +456,6 @@ def uninstallUnwantedUsers()->bool:
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
-    from .sambaPoint import smbHelp    
     log.info("Uninstalling unwanted SFTP users.")
     b, f = check_config_exists()
     if not b:
@@ -491,8 +492,7 @@ def uninstallUnwantedUsers()->bool:
                     success=False
             else:
                 log.info(f"User {u.username} is in JSON file, keeping installed.")
-                
-        smbHelp.reloadSystemdDaemon()
+
         return success
     except Exception as e:
         log.error(f"Failed to uninstall unwanted SFTP users: {e}")
@@ -546,8 +546,6 @@ def uninstallAllUsers()->bool:
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
-    from .sambaPoint import smbHelp
-    
     log.info("Uninstalling all SFTP users.")
     try:
         users = listActiveUsers()
@@ -563,6 +561,5 @@ def uninstallAllUsers()->bool:
     for u in users:
         if not __uninstallUser(u):
             success=False
-            
-    smbHelp.reloadSystemdDaemon()
+
     return success

@@ -265,8 +265,9 @@ class mountpointsManager:
                 raise RuntimeError(f"Mountpoint {mount_name} does not exist for user {self.username}.")
             self.deleteOneMountpoint(mp)
             
-        smb.postRemoveAllMountpoints()
-        
+        if not smb.postRemoveAllMountpoints():
+            raise RuntimeError("Failed to finalize mountpoint removal changes.")
+
     def getMountpoints(self)->list[sftpUserMountpoint]:
         """Získá seznam mountpointů uživatele.
         Returns:
