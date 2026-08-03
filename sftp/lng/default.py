@@ -1,0 +1,8 @@
+TXT_SFTP_PARSER_CONFIG_USER_REQUIRED = "Configuration must contain at least one user."
+TXT_SFTP_PARSER_INVALID_ADMIN_MAIL = "Configuration contains an invalid 'adminMail' address."
+TXT_SFTP_PARSER_USER_FIELD_REQUIRED = "Each user must have a 'sftpuser' field."
+TXT_SFTP_PARSER_USER_MOUNT_REQUIRED = "User '{username}' must have at least one mountpoint."
+TXT_SFTP_PARSER_MOUNT_LABEL_INVALID = "Mountpoint label '{label}' for user '{username}' is invalid. Use only letters, numbers, underscores or hyphens."
+TXT_SFTP_PARSER_MOUNT_PATH_INVALID = "Mountpoint path '{path}' for user '{username}' is invalid. Must be an absolute path that exists."
+TXT_SFTP_PARSER_USER_KEY_REQUIRED = "User '{username}' must have at least one public key or certificate."
+TXT_SFTP_PARSER_INVALID_USER_MAIL = "User '{username}' has an invalid 'mail' address."
