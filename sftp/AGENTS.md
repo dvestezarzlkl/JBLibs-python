@@ -14,3 +14,5 @@
 - `sambaPoint.ensureMountpoint()` must re-raise its original failure and must never continue with an uninitialized `cifs_path`.
 - Parser Apply is a synchronization operation: mountpoints removed from config, moved to another real path, or changed between bind and Samba must be removed before desired mountpoints are ensured.
 - SSHD config must use the real user home returned by the system and must create `.ssh` there instead of falling back to `/home/<user>`.
+- Samba/CIFS Apply is a transaction: configuration changes may be queued, but before reloading or restarting `smbd` all managed loopback CIFS mounts must be unmounted; then reload Samba, run exactly one `systemctl daemon-reload`, and remount every managed CIFS entry still present in `/etc/fstab`.
+- Never run `daemon-reload` while a managed loopback CIFS mount is reconnecting after an `smbd` restart; `systemd-fstab-generator` may block in the CIFS kernel client for about 90 seconds.

@@ -27,6 +27,8 @@ class smbHelp:
     requireSambaRestart:bool = False
     toRemove:list[str] = []
     """Fullpath seznam mount pointů, které je potřeba odebrat při odebrání mountpointů"""
+    _batchDepth:int = 0
+    """Hloubka vnořené dávky změn; post-processing proběhne až při návratu na nulu."""
 
     @staticmethod
     def ensureSambaCredFile():
@@ -259,24 +261,24 @@ class smbHelp:
             
     @staticmethod
     def reloadSystemdDaemon()->bool:
-        """Restartuje systemd daemon po změně jednotek.
+        """Reload systemd po změně /etc/fstab.
+        Volání je synchronní; další pevná čekací doba není potřeba.
         Returns:
-            bool: True pokud byl restart úspěšný, False pokud došlo k chybě
+            bool: True pokud reload proběhl úspěšně, jinak False.
         """
-        log.info("Restarting systemd daemon.")
+        log.info("Reloading systemd daemon.")
         try:
-            proc = subprocess.run(
+            subprocess.run(
                 ["systemctl", "daemon-reload"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=True
             )
-            log.info("Systemd daemon restarted successfully - waiting for stabilization.")
-            time.sleep(3)  # počkáme chvilku, ať se systém stabilizuje
-            log.info("Systemd daemon stabilization wait complete.")
+            log.info("Systemd daemon reloaded successfully.")
             return True
         except subprocess.CalledProcessError as e:
-            log.error(f"Failed to restart systemd daemon: {e.stderr.decode().strip()}")
+            stderr = e.stderr.decode().strip() if e.stderr else str(e)
+            log.error(f"Failed to reload systemd daemon: {stderr}")
             log.exception(e)
             return False
             
@@ -449,7 +451,164 @@ class smbHelp:
             log.error(msg)
             log.exception(e)
             raise RuntimeError(msg)
-        
+
+    @staticmethod
+    def beginBatch()->None:
+        """Zahájí (případně vnoří) dávku Samba/CIFS změn."""
+        smbHelp._batchDepth += 1
+        log.debug(f"Samba/CIFS change batch depth increased to {smbHelp._batchDepth}.")
+
+    @staticmethod
+    def endBatch()->bool:
+        """Ukončí dávku a na nejvyšší úrovni provede jediný post-processing."""
+        if smbHelp._batchDepth <= 0:
+            log.warning("Samba/CIFS endBatch called without a matching beginBatch.")
+            return smbHelp.finalizeMountpointChanges()
+
+        smbHelp._batchDepth -= 1
+        log.debug(f"Samba/CIFS change batch depth decreased to {smbHelp._batchDepth}.")
+        if smbHelp._batchDepth > 0:
+            return True
+        return smbHelp.finalizeMountpointChanges()
+
+    @staticmethod
+    def _isManagedCIFSSource(source:str)->bool:
+        return (
+            source.startswith("//127.0.0.1/sftp_mount_")
+            or source.startswith("//localhost/sftp_mount_")
+        )
+
+    @staticmethod
+    def getMountedManagedCIFS()->list[tuple[str, str]]:
+        """Vrátí (source, target) všech aktivních spravovaných loopback CIFS mountů."""
+        mounts:list[tuple[str, str]] = []
+        try:
+            with open("/proc/mounts", "r") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 3:
+                        continue
+                    source, target, fs_type = parts[:3]
+                    if fs_type == "cifs" and smbHelp._isManagedCIFSSource(source):
+                        mounts.append((source, target))
+        except Exception as e:
+            raise RuntimeError(f"Failed to list mounted managed CIFS mountpoints: {e}") from e
+        return mounts
+
+    @staticmethod
+    def getConfiguredManagedCIFS()->list[tuple[str, str]]:
+        """Vrátí (source, target) spravovaných CIFS položek z aktuálního /etc/fstab."""
+        mounts:list[tuple[str, str]] = []
+        fstab_file = "/etc/fstab"
+        try:
+            if not os.path.isfile(fstab_file):
+                return mounts
+            with open(fstab_file, "r") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    parts = stripped.split()
+                    if len(parts) < 3:
+                        continue
+                    source, target, fs_type = parts[:3]
+                    if fs_type == "cifs" and smbHelp._isManagedCIFSSource(source):
+                        item = (source, target)
+                        if item not in mounts:
+                            mounts.append(item)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read managed CIFS mountpoints from {fstab_file}: {e}") from e
+        return mounts
+
+    @staticmethod
+    def unmountAllManagedCIFS()->None:
+        """Odmountuje všechny aktivní spravované CIFS mounty před změnou Samba služby."""
+        for source, target in reversed(smbHelp.getMountedManagedCIFS()):
+            log.info(f"Unmounting managed CIFS mount {source} from {target} before Samba reload.")
+            try:
+                subprocess.run(
+                    ["umount", target],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr.decode().strip() if e.stderr else str(e)
+                raise RuntimeError(f"Failed to unmount managed CIFS mount {target}: {stderr}") from e
+
+    @staticmethod
+    def mountConfiguredManagedCIFS(mounts:list[tuple[str, str]])->None:
+        """Připojí všechny spravované CIFS položky, které po změnách zůstaly v /etc/fstab."""
+        for source, target in mounts:
+            log.info(f"Mounting configured CIFS mount {source} on {target}.")
+            try:
+                subprocess.run(
+                    ["mount", target],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True
+                )
+            except subprocess.CalledProcessError as e:
+                stderr = e.stderr.decode().strip() if e.stderr else str(e)
+                raise RuntimeError(f"Failed to mount configured CIFS mount {target}: {stderr}") from e
+
+    @staticmethod
+    def removeQueuedMountpointDirectories()->bool:
+        """Odstraní prázdné adresáře již odmountovaných a z konfigurace odebraných mountpointů."""
+        success = True
+        for mnt in list(smbHelp.toRemove):
+            if os.path.isdir(mnt):
+                log.info(f"Removing mount point directory {mnt}.")
+                try:
+                    os.rmdir(mnt)
+                    log.info(f"Mount point directory {mnt} removed successfully.")
+                except Exception as e:
+                    success = False
+                    log.error(f"Failed to remove mount point directory {mnt}: {e}")
+                    log.exception(e)
+        smbHelp.toRemove.clear()
+        return success
+
+    @staticmethod
+    def finalizeMountpointChanges()->bool:
+        """Dokončí Samba/CIFS změny v bezpečném pořadí jako jednu transakci.
+
+        Po úpravách smb.conf a /etc/fstab odmountuje všechny stále aktivní
+        spravované loopback CIFS mounty, načte novou Samba konfiguraci,
+        provede jediný daemon-reload a připojí výsledný stav z /etc/fstab.
+        """
+        pending = smbHelp.requireSambaRestart or bool(smbHelp.toMount) or bool(smbHelp.toRemove)
+        if not pending:
+            log.info("Samba/CIFS post-processing: no pending changes.")
+            return True
+
+        try:
+            configured_mounts = smbHelp.getConfiguredManagedCIFS()
+
+            if not smbHelp.removeQueuedMountpointDirectories():
+                raise RuntimeError("Failed to remove one or more obsolete mountpoint directories.")
+
+            smbHelp.unmountAllManagedCIFS()
+
+            if smbHelp.requireSambaRestart:
+                if not reloadSambaService():
+                    raise RuntimeError("Failed to reload or restart Samba service.")
+
+            if not smbHelp.reloadSystemdDaemon():
+                raise RuntimeError("Failed to reload systemd after CIFS fstab changes.")
+
+            smbHelp.mountConfiguredManagedCIFS(configured_mounts)
+            log.info("Samba/CIFS mountpoint transaction completed successfully.")
+            return True
+        except Exception as e:
+            log.error(f"Samba/CIFS mountpoint transaction failed: {e}")
+            log.exception(e)
+            return False
+        finally:
+            smbHelp.requireSambaRestart = False
+            smbHelp.toMount.clear()
+            smbHelp.toRemove.clear()
+
     @staticmethod
     def waitSambaAlive(timeout: float = 5.0, interval: float = 0.1) -> bool:
         """
@@ -552,6 +711,31 @@ def restartSambaService()->bool:
     time.sleep(1)  # počkáme chvilku, ať se systém stabilizuje
     log.info(f"< {SRVNM} service restarted successfully.")
     return True
+
+def reloadSambaService()->bool:
+    """Načte změny konfigurace smbd bez přerušení relací; při nepodporovaném reloadu použije restart."""
+    SRV = "smbd"
+    service = c_service(SRV)
+    if service.exists() is False:
+        log.error(" < Samba - smbd service does not exist on this system.")
+        return False
+    if not service.running():
+        log.info("Samba - smbd is not running; starting it instead of reloading.")
+        return restartSambaService()
+
+    log.info("Reloading Samba - smbd configuration.")
+    proc = subprocess.run(
+        ["systemctl", "reload", SRV],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    if proc.returncode == 0:
+        log.info("Samba configuration reloaded successfully.")
+        return True
+
+    stderr = proc.stderr.decode().strip() if proc.stderr else f"return code {proc.returncode}"
+    log.warning(f"Samba reload failed ({stderr}); falling back to a full restart.")
+    return restartSambaService()
 
 def makeShareNameSafe(name:str,username:str,prefixAdd:bool=True)->str:
     """Převede jméno na bezpečné pro použití jako Samba share name.
@@ -693,77 +877,18 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
     log.info(f"< Samba SFTP mount point {cifs_path} prepared successfully.")
     return cifs_path
     
-def postEnsureAllMountpoints()->None:
-    """Provede potřebné akce po zajištění všech mount pointů.
-    Zatím pouze restartuje Samba službu, pokud bylo potřeba.
-    """
-    if smbHelp.requireSambaRestart:
-        log.info("Post-processing: Restarting Samba service as required.")
-        if not restartSambaService():
-            log.error(" < Failed to restart Samba service during post-processing of mount points.")
-        else:
-            log.info("Samba service restarted successfully during post-processing of mount points.")
-        smbHelp.requireSambaRestart = False
-    else:
-        log.info("Post-processing: No Samba service restart required.")
-            
-    if smbHelp.toMount:
-        log.info("Post-processing: waiting 2 seconds.")
-        time.sleep(2)  # počkáme chvilku, ať se systém stabilizuje
-        log.info("Post-processing: Reloading systemd daemon before mounting Samba SFTP mount points.")
-        smbHelp.reloadSystemdDaemon()
-        log.info("Post-processing: waiting 3 seconds.")
-        time.sleep(3)  # počkáme chvilku, ať se systém stabilizuje
-        log.info("Post-processing: Mounting Samba SFTP mount points.")
-        for mnt in smbHelp.toMount:
-            log.info(f"Post-processing: Ensuring mount of Samba SFTP mount point {mnt}.")
-            try:
-                import subprocess
-                subprocess.run([
-                    "mount",
-                    mnt
-                ], check=True)
-                log.info(f"Samba SFTP mount point {mnt} mounted successfully during post-processing.")
-            except subprocess.CalledProcessError as e:
-                log.error(f" < Failed to mount Samba SFTP mount point {mnt} during post-processing: {e}")
-        smbHelp.toMount.clear()
-    else:
-        log.info("Post-processing: No Samba SFTP mount points to mount.")
-        
-def postRemoveAllMountpoints()->None:
-    """Provede potřebné akce po odebrání všech mount pointů.    
-    Jen restartuje sambu pokud je potřeba, protože umount musí být proveden před odstraněním smaba pointů.
-    
-    POZOR: je potřeba zavolat smbHelp.reloadSystemdDaemon() na konci všech remove, pokud by jsme dali sem
-    tak u každého uživatele bude reloadovat a někdy to trvá i několik minut
-    
-    Takže se v kódu provede umount, odstraní se fstab a samba konfigurace a pak se zavolá tato funkce.
-    
-    """
-    if smbHelp.requireSambaRestart:
-        log.info("Post-processing: Restarting Samba service as required after mount point removals.")
-        if not restartSambaService():
-            log.error(" < Failed to restart Samba service during post-processing of mount point removals.")
-        else:
-            log.info("Samba service restarted successfully during post-processing of mount point removals.")            
-        smbHelp.requireSambaRestart = False
-    else:
-        log.info("Post-processing: No Samba service restart required after mount point removals.")
-        
-    log.info(f"Remove MountPonits: Clearing mount point removal list  - count: {len(smbHelp.toRemove)}")
-    try:
-        for mnt in smbHelp.toRemove:
-            if os.path.isdir(mnt):
-                log.info(f"Post-processing: Removing mount point directory {mnt}.")
-                try:
-                    os.rmdir(mnt)
-                    log.info(f"Mount point directory {mnt} removed successfully during post-processing.")
-                except Exception as e:
-                    log.error(f" < Failed to remove mount point directory {mnt} during post-processing: {e}")
-    except Exception as e:
-        log.error(f" < Exception during post-processing of mount point removals: {e}")
-        log.exception(e)
-        
-    smbHelp.toRemove.clear()
-        
-    log.info("Post-processing of mount point removals completed.")
+def postEnsureAllMountpoints()->bool:
+    """Dokončí připravené Samba/CIFS změny, nebo je odloží do konce aktivní dávky."""
+    if smbHelp._batchDepth > 0:
+        log.info("Samba/CIFS post-processing deferred until the active batch is complete.")
+        return True
+    return smbHelp.finalizeMountpointChanges()
+
+def postRemoveAllMountpoints()->bool:
+    """Odstraní prázdné adresáře a dokončí změny, nebo service část odloží do konce dávky."""
+    if not smbHelp.removeQueuedMountpointDirectories():
+        return False
+    if smbHelp._batchDepth > 0:
+        log.info("Samba/CIFS removal post-processing deferred until the active batch is complete.")
+        return True
+    return smbHelp.finalizeMountpointChanges()
