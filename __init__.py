@@ -1,3 +1,4 @@
-__version__ = "1.2.13"
+__version__ = "1.2.14"
 
-# v 1.2.12 > 1.2.13 jen test updateru, nikde se nic nemění, jen testuje, jestli se to správně aktualizuje
+# 1.2.14: reusable SMTP transport with path/bytes/stream attachments and in-memory ZIP support
+# 1.2.13: updater integration test only; no library behavior changed
