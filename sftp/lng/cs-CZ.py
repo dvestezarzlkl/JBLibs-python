@@ -1,0 +1,8 @@
+TXT_SFTP_PARSER_CONFIG_USER_REQUIRED = "Konfigurace musí obsahovat alespoň jednoho uživatele."
+TXT_SFTP_PARSER_INVALID_ADMIN_MAIL = "Konfigurace obsahuje neplatnou adresu 'adminMail'."
+TXT_SFTP_PARSER_USER_FIELD_REQUIRED = "Každý uživatel musí obsahovat položku 'sftpuser'."
+TXT_SFTP_PARSER_USER_MOUNT_REQUIRED = "Uživatel '{username}' musí mít alespoň jeden mountpoint."
+TXT_SFTP_PARSER_MOUNT_LABEL_INVALID = "Název mountpointu '{label}' uživatele '{username}' je neplatný. Použijte pouze písmena, čísla, podtržítka nebo pomlčky."
+TXT_SFTP_PARSER_MOUNT_PATH_INVALID = "Cesta mountpointu '{path}' uživatele '{username}' je neplatná. Musí jít o existující absolutní cestu."
+TXT_SFTP_PARSER_USER_KEY_REQUIRED = "Uživatel '{username}' musí mít alespoň jeden veřejný klíč nebo certifikát."
+TXT_SFTP_PARSER_INVALID_USER_MAIL = "Uživatel '{username}' má neplatnou adresu 'mail'."
