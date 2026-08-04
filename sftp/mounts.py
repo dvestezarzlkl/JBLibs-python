@@ -331,17 +331,15 @@ def remove_fstab(username):
 def can_umount(path: str) -> bool:
     if not os.path.ismount(path):
         return True
-    proc = subprocess.run(
-        ["lsof", "+f", "--", path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    return (proc.stdout.strip() == b"") and (proc.returncode in (0,1))
-
-# test lsof existence, pokud není tak system exit 1 s chybovou hláškou jak instalovat, nevymýšlej neexistující funkce
-try:
-    subprocess.run(["lsof", "-v"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-except FileNotFoundError:
-    print("Error: 'lsof' command not found. Please install 'sudo apt install lsof' package to use mountpoint management features.")
-    import sys
-    sys.exit(1)
+    try:
+        proc = subprocess.run(
+            ["lsof", "+f", "--", path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "The 'lsof' command is required for safe mountpoint removal. "
+            "Install it with: sudo apt install lsof"
+        ) from exc
+    return (proc.stdout.strip() == b"") and (proc.returncode in (0, 1))

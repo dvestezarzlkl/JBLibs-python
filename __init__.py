@@ -1,5 +1,6 @@
-__version__ = "1.2.16"
+__version__ = "1.2.17"
 
+# 1.2.17: missing lsof no longer terminates applications during SFTP mount module import
 # 1.2.16: c_menu exits cleanly on Ctrl+C while waiting for input without swallowing interrupts from active actions
 # 1.2.15: SMTP messages include the required RFC Date header before transport
 # 1.2.14: reusable SMTP transport with path/bytes/stream attachments and in-memory ZIP support
