@@ -91,6 +91,18 @@ class MailTests(unittest.TestCase):
         self.assertEqual(attachments[0].get_content_type(), "text/plain")
         self.assertEqual(attachments[0].get_payload(decode=True), b"hello")
 
+    def test_build_message_adds_required_date_header(self):
+        expected = "Tue, 04 Aug 2026 09:40:00 +0200"
+        with patch("mail.formatdate", return_value=expected):
+            message, _ = mail.build_message(
+                mail_from="sender@example.test",
+                recipients=["user@example.test"],
+                subject="Subject",
+                body="Body",
+            )
+
+        self.assertEqual(message["Date"], expected)
+
     def test_path_and_stream_attachments(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "path.bin"
