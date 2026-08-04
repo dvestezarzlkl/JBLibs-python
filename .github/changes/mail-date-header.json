@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "commit_message": "Add RFC Date header to SMTP messages",
+  "replacements": [
+    {
+      "path": "mail.py",
+      "old": "from dataclasses import dataclass, field\nfrom email.message import EmailMessage\nfrom pathlib import Path\n",
+      "new": "from dataclasses import dataclass, field\nfrom email.message import EmailMessage\nfrom email.utils import formatdate\nfrom pathlib import Path\n",
+      "expected": 1
+    },
+    {
+      "path": "mail.py",
+      "old": "    msg = EmailMessage()\n    msg[\"From\"] = mail_from.strip().lower()\n",
+      "new": "    msg = EmailMessage()\n    msg[\"Date\"] = formatdate(localtime=True)\n    msg[\"From\"] = mail_from.strip().lower()\n",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_mail.py",
+      "old": "    def test_path_and_stream_attachments(self):\n",
+      "new": "    def test_build_message_adds_required_date_header(self):\n        expected = \"Tue, 04 Aug 2026 09:40:00 +0200\"\n        with patch(\"mail.formatdate\", return_value=expected):\n            message, _ = mail.build_message(\n                mail_from=\"sender@example.test\",\n                recipients=[\"user@example.test\"],\n                subject=\"Subject\",\n                body=\"Body\",\n            )\n\n        self.assertEqual(message[\"Date\"], expected)\n\n    def test_path_and_stream_attachments(self):\n",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.14\"\n\n# 1.2.14: reusable SMTP transport with path/bytes/stream attachments and in-memory ZIP support\n",
+      "new": "__version__ = \"1.2.15\"\n\n# 1.2.15: SMTP messages include the required RFC Date header before transport\n# 1.2.14: reusable SMTP transport with path/bytes/stream attachments and in-memory ZIP support\n",
+      "expected": 1
+    }
+  ]
+}
