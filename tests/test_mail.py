@@ -102,6 +102,7 @@ class MailTests(unittest.TestCase):
             )
 
         self.assertEqual(message["Date"], expected)
+        self.assertEqual(message.get_all("Date"), [expected])
 
     def test_path_and_stream_attachments(self):
         with tempfile.TemporaryDirectory() as temp_dir:
