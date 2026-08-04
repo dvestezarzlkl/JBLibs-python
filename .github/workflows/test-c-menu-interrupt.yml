@@ -37,9 +37,7 @@ jobs:
         run: python -m pip install psutil==6.1.0
 
       - name: Prepare JBLibs log directory
-        run: |
-          sudo mkdir -p /var/log/jb_sys_apps
-          sudo chown "$(id -u):$(id -g)" /var/log/jb_sys_apps
+        run: mkdir -p log
 
       - name: Compile menu modules
         run: python -m py_compile c_menu.py term.py tests/test_c_menu_interrupt.py
