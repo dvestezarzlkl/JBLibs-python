@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "commit_message": "Handle Ctrl+C while waiting in c_menu",
+  "replacements": [
+    {
+      "path": "c_menu.py",
+      "old": "            xc=getKey(ESC_isExit=True)\n            \n            # pokud je klávesa string tak vezmeme první znak do xk pro jednoznakové testy",
+      "new": "            try:\n                xc=getKey(ESC_isExit=True)\n            except KeyboardInterrupt:\n                # Ctrl+C zachytáváme pouze při bezpečném čekání na vstup.\n                # KeyboardInterrupt z běžící onSelect akce se sem nedostane a\n                # může tak zachovat její vlastní cleanup/finally chování.\n                log.info(\"KeyboardInterrupt while waiting for menu input\")\n                self._selectedItem=None\n                c=\"\"\n                e=self.callExitMenu(item)\n                if isinstance(e,str):\n                    return e\n                if e is False:\n                    self.menuRecycle=True\n                    first=True\n                    continue\n                return\n            \n            # pokud je klávesa string tak vezmeme první znak do xk pro jednoznakové testy",
+      "expected": 1
+    },
+    {
+      "path": "c_menu.py",
+      "old": "                if x is False:\n                    self.lastReturn.err = onSelReturn(err=TXT_ABORTED)\n                    return False",
+      "new": "                if x is False:\n                    self.lastReturn = onSelReturn(err=TXT_ABORTED)\n                    return False",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.15\"\n\n# 1.2.15: SMTP messages include the required RFC Date header before transport",
+      "new": "__version__ = \"1.2.16\"\n\n# 1.2.16: c_menu exits cleanly on Ctrl+C while waiting for input without swallowing interrupts from active actions\n# 1.2.15: SMTP messages include the required RFC Date header before transport",
+      "expected": 1
+    },
+    {
+      "path": "c_menu.md",
+      "old": "- Příkaz ESC slouží k ukončení menu nebo návratu zpět.\n- Podpora zobrazování chybových a informačních hlášek pomocí třídy `onSelReturn`.",
+      "new": "- Příkaz ESC slouží k ukončení menu nebo návratu zpět.\n- `Ctrl+C` během čekání na volbu ukončí aktuální menu čistě přes `onExitMenu` bez tracebacku; `KeyboardInterrupt` vzniklý uvnitř právě běžící akce se nezachytává, aby zůstalo zachováno její cleanup/finally chování.\n- Podpora zobrazování chybových a informačních hlášek pomocí třídy `onSelReturn`.",
+      "expected": 1
+    }
+  ]
+}
