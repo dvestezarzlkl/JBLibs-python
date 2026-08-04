@@ -1504,8 +1504,24 @@ class c_menu:
                 sleep(0.25) # opoždění při prvním načtení aby se stihla klávesnice stabilizovat a nezopakovala se např volba
             first = False
 
-            xc=getKey(ESC_isExit=True)
-            
+            try:
+                xc=getKey(ESC_isExit=True)
+            except KeyboardInterrupt:
+                # Ctrl+C zachytáváme pouze při bezpečném čekání na vstup.
+                # KeyboardInterrupt z běžící onSelect akce se sem nedostane a
+                # může tak zachovat její vlastní cleanup/finally chování.
+                log.info("KeyboardInterrupt while waiting for menu input")
+                self._selectedItem=None
+                c=""
+                e=self.callExitMenu(item)
+                if isinstance(e,str):
+                    return e
+                if e is False:
+                    self.menuRecycle=True
+                    first=True
+                    continue
+                return
+
             # pokud je klávesa string tak vezmeme první znak do xk pro jednoznakové testy
             xk=''
             if isinstance(xc,str) and xc:
@@ -1704,7 +1720,7 @@ class c_menu:
             try:
                 x=self.onExitMenu()
                 if x is False:
-                    self.lastReturn.err = onSelReturn(err=TXT_ABORTED)
+                    self.lastReturn = onSelReturn(err=TXT_ABORTED)
                     return False
                 if isinstance(x,str):
                     return x

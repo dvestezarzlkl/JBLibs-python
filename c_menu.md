@@ -130,4 +130,5 @@ menu.run()
 - Výběr volby pomocí šipek nebo psaní klávesou.
 - Podpora dynamických menu a větvení submenu pro zjednodušené ovládání.
 - Příkaz ESC slouží k ukončení menu nebo návratu zpět.
+- `Ctrl+C` během čekání na volbu ukončí aktuální menu čistě přes `onExitMenu` bez tracebacku; `KeyboardInterrupt` vzniklý uvnitř právě běžící akce se nezachytává, aby zůstalo zachováno její cleanup/finally chování.
 - Podpora zobrazování chybových a informačních hlášek pomocí třídy `onSelReturn`.
