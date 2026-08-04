@@ -7,6 +7,7 @@ import smtplib
 import zipfile
 from dataclasses import dataclass, field
 from email.message import EmailMessage
+from email.utils import formatdate
 from pathlib import Path
 from typing import BinaryIO, Iterable, Optional, Sequence, Tuple, Union
 
@@ -222,6 +223,7 @@ def build_message(
         raise ValueError("At least one valid To recipient is required.")
 
     msg = EmailMessage()
+    msg["Date"] = formatdate(localtime=True)
     msg["From"] = mail_from.strip().lower()
     msg["To"] = ", ".join(to_list)
     if cc_list:
