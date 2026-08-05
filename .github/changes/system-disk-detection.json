@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "commit_message": "Fix recursive system disk detection",
+  "replacements": [
+    {
+      "path": "fs_utils.py",
+      "old": "    @property\n    def isSystemDisk(self) -> bool:\n        \"\"\"Vrátí True pokud je disk použit pro / nebo /boot.\"\"\"\n        for mp in self.mountpoints:\n            if mp in ['/', '/boot']:\n                return True\n        return False\n",
+      "new": "    @property\n    def isSystemDisk(self) -> bool:\n        \"\"\"Vrátí True pro systémovou partition nebo disk, který ji obsahuje.\n\n        U rodičovského disku jsou mountpointy obvykle uložené až na jeho\n        partition children. Kontrola proto musí být rekurzivní; jinak se živý\n        systémový disk chybně tváří jako běžný a může zpřístupnit destruktivní\n        operace.\n        \"\"\"\n        system_mountpoints = {'/', '/boot', '/boot/efi'}\n        if any(mp in system_mountpoints for mp in self.mountpoints):\n            return True\n        return any(child.isSystemDisk for child in self.children)\n",
+      "expected": 1
+    },
+    {
+      "path": "fs_utils.py",
+      "old": "        # filter children na základě ignoreSysDisks\n        if ignoreSysDisks and info and children:\n            children = [child for child in children if not ('/' in child.mountpoints or '/boot' in child.mountpoints)]\n            # pokud nic nezbylo tak protože filtrujeme na sysdisk tak nepřídáme ani rodiče\n            if not children:\n                continue\n",
+      "new": "        # ignoreSysDisks znamená vyřadit celý systémový disk, ne pouze\n        # jeho root/boot partition. Částečný rodič bez systémového child by měl\n        # nepravdivý počet partition, mountpointy i bezpečnostní stav.\n        if ignoreSysDisks and (\n            info.isSystemDisk or any(child.isSystemDisk for child in children)\n        ):\n            continue\n",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.17\"\n\n# 1.2.17: missing lsof no longer terminates applications during SFTP mount module import\n",
+      "new": "__version__ = \"1.2.18\"\n\n# 1.2.18: system disk detection follows child partitions and filtering removes the complete live system disk\n# 1.2.17: missing lsof no longer terminates applications during SFTP mount module import\n",
+      "expected": 1
+    },
+    {
+      "path": "Readme.md",
+      "old": "v1.2.7\n",
+      "new": "v1.2.18\n",
+      "expected": 1
+    }
+  ]
+}
