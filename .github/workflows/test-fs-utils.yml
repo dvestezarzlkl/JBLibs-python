@@ -1,0 +1,49 @@
+name: Test fs_utils system disk detection
+
+on:
+  pull_request:
+    paths:
+      - "fs_utils.py"
+      - "__init__.py"
+      - "tests/test_fs_utils_system_disk.py"
+      - ".github/workflows/test-fs-utils.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "fs_utils.py"
+      - "__init__.py"
+      - "tests/test_fs_utils_system_disk.py"
+      - ".github/workflows/test-fs-utils.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Compile fs_utils and tests
+        run: python -m py_compile fs_utils.py tests/test_fs_utils_system_disk.py
+
+      - name: Run fs_utils tests
+        run: python -m unittest -v tests.test_fs_utils_system_disk
+
+      - name: Verify library version
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          init = Path("__init__.py").read_text(encoding="utf-8")
+          version = re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE).group(1)
+          assert version == "1.2.18"
+          PY
