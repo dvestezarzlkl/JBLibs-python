@@ -2,7 +2,7 @@
 
 Soubor pomocných knihoven pro python, changelog viz git změny
 
-v1.2.7
+v1.2.18
 
 ## c_menu
 
@@ -39,6 +39,10 @@ Více viz komentáře v knihovně
 Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm, select
 
 Víc v komentářích knihovny
+
+## fs_utils
+
+`lsblkDiskInfo.isSystemDisk` rozpoznává systémovou partition i její rodičovský disk podle child stromu a mountpointů `/`, `/boot` nebo `/boot/efi`.
 
 ## fs_helper
 
