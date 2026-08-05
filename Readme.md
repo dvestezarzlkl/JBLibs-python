@@ -40,6 +40,10 @@ Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm, sel
 
 Víc v komentářích knihovny
 
+## fs_utils
+
+`lsblkDiskInfo.isSystemDisk` rozpoznává systémovou partition i její rodičovský disk podle child stromu a mountpointů `/`, `/boot` nebo `/boot/efi`.
+
 ## fs_helper
 
 Knihovna pro práci se souborovým systémem, interaktivní výběr souborů/adresářů v terminálu.
