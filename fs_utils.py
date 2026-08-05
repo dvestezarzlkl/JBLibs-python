@@ -193,11 +193,17 @@ class lsblkDiskInfo:
             
     @property
     def isSystemDisk(self) -> bool:
-        """Vrátí True pokud je disk použit pro / nebo /boot."""
-        for mp in self.mountpoints:
-            if mp in ['/', '/boot']:
-                return True
-        return False
+        """Vrátí True pro systémovou partition nebo disk, který ji obsahuje.
+
+        U rodičovského disku jsou mountpointy obvykle uložené až na jeho
+        partition children. Kontrola proto musí být rekurzivní; jinak se živý
+        systémový disk chybně tváří jako běžný a může zpřístupnit destruktivní
+        operace.
+        """
+        system_mountpoints = {'/', '/boot', '/boot/efi'}
+        if any(mp in system_mountpoints for mp in self.mountpoints):
+            return True
+        return any(child.isSystemDisk for child in self.children)
             
     @property
     def haveMountPoints(self) -> bool:
@@ -329,12 +335,13 @@ def __lsblk(
         else:
             children = []
         
-        # filter children na základě ignoreSysDisks
-        if ignoreSysDisks and info and children:
-            children = [child for child in children if not ('/' in child.mountpoints or '/boot' in child.mountpoints)]
-            # pokud nic nezbylo tak protože filtrujeme na sysdisk tak nepřídáme ani rodiče
-            if not children:
-                continue
+        # ignoreSysDisks znamená vyřadit celý systémový disk, ne pouze
+        # jeho root/boot partition. Částečný rodič bez systémového child by měl
+        # nepravdivý počet partition, mountpointy i bezpečnostní stav.
+        if ignoreSysDisks and (
+            info.isSystemDisk or any(child.isSystemDisk for child in children)
+        ):
+            continue
         
         # check na mount
         if not mounted is None and info:

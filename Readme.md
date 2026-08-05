@@ -2,7 +2,7 @@
 
 Soubor pomocných knihoven pro python, changelog viz git změny
 
-v1.2.7
+v1.2.18
 
 ## c_menu
 
