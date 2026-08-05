@@ -96,10 +96,11 @@ class SystemDiskDetectionTests(unittest.TestCase):
                 ],
             )
         ]
+        process_lsblk = getattr(fs_utils, "__lsblk")
 
-        self.assertEqual(fs_utils.__lsblk(nodes, ignoreSysDisks=True), [])
+        self.assertEqual(process_lsblk(nodes, ignoreSysDisks=True), [])
 
-        all_disks = fs_utils.__lsblk(nodes, ignoreSysDisks=False)
+        all_disks = process_lsblk(nodes, ignoreSysDisks=False)
         self.assertEqual(len(all_disks), 1)
         self.assertEqual(len(all_disks[0].children), 2)
         self.assertTrue(all_disks[0].isSystemDisk)
