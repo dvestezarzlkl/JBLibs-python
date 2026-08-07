@@ -148,7 +148,9 @@ class ParserRwReconcileTests(unittest.TestCase):
                 patch.object(parser_module.smb, "postEnsureAllMountpoints", return_value=True),
                 patch.object(parser_module.ssh, "ensureJail", return_value=str(Path(tmp) / "jail")),
             ):
-                result = parser_module.createUserFromJson()
+                result = parser_module.createUserFromJson(
+                    cfg=json.loads(cfg_path.read_text(encoding="utf-8"))
+                )
 
             self.assertIsNotNone(result)
             self.assertEqual(manager.ensured, [("docs", str(real_path), True, desired_rw)])
@@ -166,6 +168,58 @@ class ParserRwReconcileTests(unittest.TestCase):
 
     def test_missing_managed_samba_mode_is_self_healed(self):
         self.assertEqual(self._run_apply(current_read_only=None, desired_rw=True), ["docs"])
+
+    def test_processing_error_is_returned_to_caller(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real_path = Path(tmp) / "docs"
+            real_path.mkdir()
+            cfg = {
+                "users": [
+                    {
+                        "sftpuser": "alice",
+                        "sambaVault": True,
+                        "sftpmounts": {"docs": str(real_path)},
+                        "pointsSet": {"docs": {"rw": True}},
+                        "sftpcerts": [],
+                    }
+                ]
+            }
+
+            existing = self.ExistingMount(str(real_path))
+
+            class FailingMountManager(self.FakeMountManager):
+                def deleteMountpoint(self, name):
+                    raise RuntimeError("synthetic reconcile failure")
+
+            manager = FailingMountManager(existing)
+            fake_user = types.SimpleNamespace(
+                username="alice",
+                ok=True,
+                mountpointManager=manager,
+                certificateManager=self.FakeCertificateManager(),
+            )
+
+            class FakeUserManager:
+                @staticmethod
+                def user_exists(username):
+                    return True
+
+                def __new__(cls, username):
+                    return fake_user
+
+            errors = []
+            with (
+                patch.object(parser_module, "sftpUserMng", FakeUserManager),
+                patch.object(parser_module.smb.smbHelp, "beginBatch"),
+                patch.object(parser_module.smb.smbHelp, "endBatch", return_value=True),
+                patch.object(parser_module.smb.smbHelp, "getSambaShareReadOnly", return_value=True),
+                patch.object(parser_module.smb, "postEnsureAllMountpoints", return_value=True),
+            ):
+                result = parser_module.createUserFromJson(cfg=cfg, errors_out=errors)
+
+            self.assertIsNone(result)
+            self.assertTrue(errors)
+            self.assertIn("synthetic reconcile failure", errors[-1])
 
 
 if __name__ == "__main__":

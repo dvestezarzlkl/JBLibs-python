@@ -77,7 +77,7 @@ def getDefaultEtcConfigPath(filename:str=_DEFAULT_CONFIG_NAME_)->str:
     """
     return os.path.join('/etc', _DEFAULT_CONFIG_ETC_DIR_, f"{filename}.{_DEFAULT_CONFIG_EXT_}")
 
-def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
+def createUserFromJson(file:str=None, cfg:Optional[Dict]=None, errors_out:Optional[List[str]]=None)->Union[list['sftpUserMng']|None]:
     """Vytvoří uživatele ze zadaného json souboru
     Musí mít root property:
     - `sftpuser` (string) a v něm uživatelské jméno
@@ -93,31 +93,53 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
         kde se uživatel stane rootem výše uvedených property
     
     Args:
-        file (str): deprecated - je ignrováno, vždy se použije default v ETC
+        file (str): deprecated compatibility input; when cfg is None the default ETC config is used
+        cfg (dict|None): optional in-memory configuration; avoids requiring the desired state to be persisted before system apply
+        errors_out (list[str]|None): optional caller-owned list receiving concrete processing errors
     Returns:
         list[sftpUserMng]: seznam vytvořených uživatelů
         None pokud se vytvoření uživatelů nezdaří
     """
-    b,f = check_config_exists()
-    if not b:
-        log.error(f"Cannot determine JSON input file path: {f}")
-        return None
-    file=f
-    
-    log.info(f"Loading SFTP users from JSON file {file}.")
-    if not os.path.isfile(file):
-        log.error(f"JSON file {file} does not exist.")
-        return None
-    log.info(f"Reading JSON file {file}.")
-    try:
-        with open(file, "r") as f:
-            d=json5.load(f)
-    except Exception as e:
-        log.error(f"Failed to load JSON file {file}: {e}")
-        log.exception(e)
-        return None
-    
-    log.info(f"Parsing SFTP user data from JSON file {file}.")
+    if cfg is not None:
+        if not isinstance(cfg, dict):
+            msg = "In-memory SFTP configuration must be a dictionary."
+            log.error(msg)
+            if errors_out is not None:
+                errors_out.append(msg)
+            return None
+        d = cfg
+        file = "<in-memory config>"
+        log.info("Loading SFTP users from in-memory configuration.")
+    else:
+        b,f = check_config_exists()
+        if not b:
+            msg = f"Cannot determine JSON input file path: {f}"
+            log.error(msg)
+            if errors_out is not None:
+                errors_out.append(msg)
+            return None
+        file=f
+
+        log.info(f"Loading SFTP users from JSON file {file}.")
+        if not os.path.isfile(file):
+            msg = f"JSON file {file} does not exist."
+            log.error(msg)
+            if errors_out is not None:
+                errors_out.append(msg)
+            return None
+        log.info(f"Reading JSON file {file}.")
+        try:
+            with open(file, "r") as f:
+                d=json5.load(f)
+        except Exception as e:
+            msg = f"Failed to load JSON file {file}: {e}"
+            log.error(msg)
+            log.exception(e)
+            if errors_out is not None:
+                errors_out.append(msg)
+            return None
+
+    log.info(f"Parsing SFTP user data from {file}.")
     users=[]
     ret=[]
     if "users" in d and isinstance(d["users"], list):
@@ -155,7 +177,10 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
                 # vytvoříme uživatele
                 u=sftpUserMng.create_user(username)
                 if u is None or not u.ok:
-                    log.error(f"Failed to create user {username}.")
+                    msg = f"Failed to create user {username}."
+                    log.error(msg)
+                    if errors_out is not None:
+                        errors_out.append(msg)
                     continue                    
             
             # načteme nastavení mountpointů
@@ -258,7 +283,10 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
             log.info("   - Ensuring SSH config for user {username}.")
             x=ssh.ensureJail(u.username)
             if x is None:
-                log.error(f"Failed to ensure SSH config for user {username}.")
+                msg = f"Failed to ensure SSH config for user {username}."
+                log.error(msg)
+                if errors_out is not None:
+                    errors_out.append(msg)
                 continue                                    
                 
             # zajistíme skupiny
@@ -266,20 +294,30 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
             try:
                 u.mountpointManager.ensureMountPointUserGroups()
             except Exception as e:
-                log.error(f"Failed to ensure mountpoint user groups for user {username}: {e}")
+                msg = f"Failed to ensure mountpoint user groups for user {username}: {e}"
+                log.error(msg)
                 log.exception(e)
+                if errors_out is not None:
+                    errors_out.append(msg)
                 continue
                 
             ret.append(u)
             log.info(f" <<< Successfully created/updated user {username} from JSON data.")
         except Exception as e:
-            log.error(f"Failed to create user from JSON data: {e}")
+            username = data.get('sftpuser', '<unknown>') if isinstance(data, dict) else '<unknown>'
+            msg = f"Failed to process SFTP user {username}: {e}"
+            log.error(msg)
             log.exception(e)
+            if errors_out is not None:
+                errors_out.append(msg)
     
     if not smb.postEnsureAllMountpoints():
         log.error("Failed to queue Samba/CIFS mountpoint post-processing.")
     if not smb.smbHelp.endBatch():
-        log.error("Failed to finalize Samba/CIFS mountpoint changes.")
+        msg = "Failed to finalize Samba/CIFS mountpoint changes."
+        log.error(msg)
+        if errors_out is not None:
+            errors_out.append(msg)
         return None
     # restart ssh je v hlavním volání
     log.info(f"Finished processing JSON file {file}. Created/updated {len(ret)} users.")
@@ -459,32 +497,38 @@ def __uninstallUser(username:str|sftpUserMng)->bool:
         return False    
     
 
-def uninstallUnwantedUsers()->bool:
-    """Odinstaluje všechny sftpUserMng uživatele ze systému, kteří nejsou v JSON souboru.
-    JSON soubor musí být umístěn v předdefinované cestě a musí obsahovat pole "users" se seznamem uživatelů, kteří by měli zůstat nainstalovaní.
+def uninstallUnwantedUsers(cfg:Optional[Dict]=None)->bool:
+    """Odinstaluje všechny sftpUserMng uživatele, kteří nejsou v požadované konfiguraci.
+    Pokud cfg není předáno, zachovává kompatibilní chování a načte defaultní JSON soubor.
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
     log.info("Uninstalling unwanted SFTP users.")
-    b, f = check_config_exists()
-    if not b:
-        log.error(f"Cannot determine JSON input file path: {f}")
-        return False
-    json_path = f    
-    
+
     try:
-        # nejdříve načteme všechny uživatele ze systému a všechny uživatele z JSON souboru,
-        # pak porovnáme a odinstalujeme ty kteří jsou v systému ale nejsou v JSON souboru
-        
-        # vyčteme uživatele z JSON souboru
+        # nejdříve načteme všechny uživatele ze systému a všechny uživatele z požadované konfigurace,
+        # pak porovnáme a odinstalujeme ty kteří jsou v systému ale nejsou v konfiguraci
+        if cfg is None:
+            b, f = check_config_exists()
+            if not b:
+                log.error(f"Cannot determine JSON input file path: {f}")
+                return False
+            if not os.path.isfile(f):
+                log.error(f"JSON file {f} does not exist.")
+                return False
+            with open(f, "r") as fh:
+                data = json5.load(fh)
+        elif isinstance(cfg, dict):
+            data = cfg
+        else:
+            log.error("In-memory SFTP configuration must be a dictionary.")
+            return False
+
         users_in_json = set()
-        if os.path.isfile(json_path):
-            with open(json_path, "r") as f:
-                data = json5.load(f)
-                if "users" in data and isinstance(data["users"], list):
-                    for udata in data["users"]:
-                        if "sftpuser" in udata and isinstance(udata["sftpuser"], str):
-                            users_in_json.add(udata["sftpuser"])
+        if "users" in data and isinstance(data["users"], list):
+            for udata in data["users"]:
+                if "sftpuser" in udata and isinstance(udata["sftpuser"], str):
+                    users_in_json.add(udata["sftpuser"])
         
         # vyčteme aktivní uživatele ze systému
         active_users = listActiveUsers()
