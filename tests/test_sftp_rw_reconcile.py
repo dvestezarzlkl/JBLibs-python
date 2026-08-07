@@ -65,6 +65,73 @@ class SambaReadOnlyStateTests(unittest.TestCase):
                 )
 
 
+class SambaBatchTransactionTests(unittest.TestCase):
+    def setUp(self):
+        samba_module.smbHelp._batchDepth = 0
+        samba_module.smbHelp.requireSambaRestart = False
+        samba_module.smbHelp.toMount.clear()
+        samba_module.smbHelp.toRemove.clear()
+
+    def tearDown(self):
+        samba_module.smbHelp._batchDepth = 0
+        samba_module.smbHelp.requireSambaRestart = False
+        samba_module.smbHelp.toMount.clear()
+        samba_module.smbHelp.toRemove.clear()
+
+    def test_post_remove_does_not_cleanup_inside_active_batch(self):
+        samba_module.smbHelp._batchDepth = 1
+        samba_module.smbHelp.toRemove.append("/jail/alice/docs")
+        with patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories") as cleanup, patch.object(samba_module.smbHelp, "finalizeMountpointChanges") as finalize:
+            self.assertTrue(samba_module.postRemoveAllMountpoints())
+        cleanup.assert_not_called()
+        finalize.assert_not_called()
+        self.assertEqual(samba_module.smbHelp.toRemove, ["/jail/alice/docs"])
+
+    def test_finalize_unmounts_before_cleanup_and_preserves_final_targets(self):
+        events = []
+        configured = [("//127.0.0.1/sftp_mount_alice_docs", "/jail/alice/docs")]
+        samba_module.smbHelp.requireSambaRestart = True
+        samba_module.smbHelp.toRemove.extend(["/jail/alice/docs", "/jail/alice/obsolete"])
+        def cleanup(preserve):
+            events.append(("cleanup", set(preserve)))
+            return True
+        with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS", side_effect=lambda: events.append(("unmount", None))), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", side_effect=cleanup), patch.object(samba_module, "reloadSambaService", side_effect=lambda: events.append(("samba", None)) or True), patch.object(samba_module.smbHelp, "reloadSystemdDaemon", side_effect=lambda: events.append(("systemd", None)) or True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS", side_effect=lambda mounts: events.append(("mount", mounts))):
+            self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())
+        self.assertEqual(events, [("unmount", None), ("cleanup", {"/jail/alice/docs"}), ("samba", None), ("systemd", None), ("mount", configured)])
+
+    def test_remove_queue_keeps_target_recreated_in_same_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            keep = Path(tmp) / "keep"
+            obsolete = Path(tmp) / "obsolete"
+            keep.mkdir()
+            obsolete.mkdir()
+            samba_module.smbHelp.toRemove.extend([str(keep), str(obsolete)])
+            self.assertTrue(samba_module.smbHelp.removeQueuedMountpointDirectories({str(keep)}))
+            self.assertTrue(keep.is_dir())
+            self.assertFalse(obsolete.exists())
+            self.assertEqual(samba_module.smbHelp.toRemove, [])
+
+    def test_remove_share_defers_physical_unmount_inside_batch(self):
+        mp = types.SimpleNamespace(mountName="docs", mountPath="/jail/alice/docs")
+        samba_module.smbHelp._batchDepth = 1
+        with patch.object(samba_module.smbHelp, "isMounted", return_value=True) as is_mounted, patch.object(samba_module.smbHelp, "removeFstabCIFScfg", return_value=True), patch.object(samba_module.smbHelp, "removeSambaSharePoint"), patch.object(samba_module.subprocess, "run") as run:
+            samba_module.removeSharePoint("alice", mp)
+        is_mounted.assert_not_called()
+        run.assert_not_called()
+        self.assertIn("/jail/alice/docs", samba_module.smbHelp.toRemove)
+
+    def test_ensure_mountpoint_checks_mounted_state_with_sftp_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            jail = Path(tmp) / "jail"
+            source = Path(tmp) / "source"
+            jail.mkdir()
+            source.mkdir()
+            mp = samba_module.sftpUserMountpoint(jailPath=str(jail), line="docs", val=str(source), sambaVault=True, rw=True)
+            with patch.object(mp, "forUser", return_value=("source-owner", 1000)), patch.object(mp, "forGroup", return_value=("source-group", 1000)), patch.object(samba_module, "initEnsureSamba"), patch.object(samba_module.os, "chown"), patch.object(samba_module.os, "chmod"), patch.object(samba_module.smbHelp, "ensureSambaSharePoint"), patch.object(samba_module.smbHelp, "ensureFstabCIFScfg", return_value=True), patch.object(samba_module.smbHelp, "isMounted", return_value=True) as is_mounted:
+                samba_module.ensureMountpoint("alice", mp)
+            is_mounted.assert_called_once_with("docs", "alice")
+
+
 class ParserRwReconcileTests(unittest.TestCase):
     class ExistingMount:
         mountName = "docs"
