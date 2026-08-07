@@ -49,6 +49,8 @@ Hlavní třída menu, určená k rozšíření pro konkrétní aplikace. Menu se
 
 #### Vlastnosti `c_menu`
 
+- `globalTitle`: Volitelný globální titulní kontext sdílený všemi instancemi `c_menu`; může být text, `c_menu_block_items` nebo callable vracející tyto hodnoty a vyhodnocuje se při každém překreslení.
+- `showGlobalTitle (bool)`: Výchozí `True`; konkrétní menu může globální kontext skrýt nastavením na `False`.
 - `menu (list[c_menu_item])`: Seznam položek menu. Může být definován jako pevné položky nebo dynamicky měněn při zobrazení.
 - `title (str)`: Titulek zobrazený nahoře menu.
 - `subTitle (str)`: Podtitulek zobrazený pod titulkem.
@@ -124,6 +126,7 @@ menu.run()
 - **Rozšíření `c_menu`**: Doporučuje se rozšířit `c_menu` pro přidání specifického chování a přepisů pro konkrétní aplikace.
 - **Ošetření chyb**: Použijte `onSelReturn` pro správu a zobrazení chybových zpráv na základě akcí uživatele.
 - **Vícestupňové menu**: Podmenu lze vytvořit nastavením `onSelect` na jinou instanci `c_menu`.
+- **Persistentní kontext aplikace**: Aplikace může jednou nastavit například `c_menu.globalTitle = lambda: c_menu_block_items([("Host", hostname)])`; hodnota se pak automaticky zobrazí ve všech menu a podmenu. Menu, které stejný údaj zobrazuje samo, může použít `showGlobalTitle = False`.
 
 ## Aktuální funkcionality
 
