@@ -4,8 +4,8 @@
   "replacements": [
     {
       "path": "sftp/sambaPoint.py",
-      "old": "if smbHelp.isMounted(base_share_name, for_user):",
-      "new": "if smbHelp._batchDepth <= 0 and smbHelp.isMounted(base_share_name, for_user):",
+      "old": "if smbHelp.isMounted(share_base_name, for_user):",
+      "new": "if smbHelp._batchDepth <= 0 and smbHelp.isMounted(share_base_name, for_user):",
       "expected": 1
     },
     {
