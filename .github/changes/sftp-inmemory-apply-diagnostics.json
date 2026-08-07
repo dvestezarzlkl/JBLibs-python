@@ -61,18 +61,6 @@
       "old": "__version__ = \"1.2.21\"\n\n# 1.2.21: c_menu consistently honors onExitMenu=False for ESC, endMenu, and registered-key exit paths",
       "new": "__version__ = \"1.2.22\"\n\n# 1.2.22: SFTP reconciliation accepts in-memory config and exposes concrete per-user apply errors\n# 1.2.21: c_menu consistently honors onExitMenu=False for ESC, endMenu, and registered-key exit paths",
       "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "assert v == \"1.2.21\"",
-      "new": "assert v == \"1.2.22\"",
-      "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-fs-utils.yml",
-      "old": "assert version == \"1.2.21\"",
-      "new": "assert version == \"1.2.22\"",
-      "expected": 1
     }
   ]
 }
