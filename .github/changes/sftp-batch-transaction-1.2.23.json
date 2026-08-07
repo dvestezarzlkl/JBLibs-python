@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "commit_message": "Fix Samba CIFS batch transaction ordering",
+  "replacements": [
+    {
+      "path": "sftp/sambaPoint.py",
+      "old": "    if smbHelp.isMounted(base_share_name, for_user):\n        # umount it\n        log.info(f\"Unmounting Samba SFTP mount point {cifs_path} before removal.\")\n        try:\n            import subprocess\n            subprocess.run([\n                \"umount\",\n                cifs_path\n            ], check=True)\n        except subprocess.CalledProcessError as e:\n            msg=f\"Failed to unmount Samba SFTP mount point {cifs_path} before removal: {e}\"\n            log.error(msg)\n            log.exception(e)\n            raise RuntimeError(msg)",
+      "new": "    if smbHelp.isMounted(base_share_name, for_user):\n        if smbHelp._batchDepth > 0:\n            log.info(\n                f\"Deferring unmount of Samba SFTP mount point {mp.mountPath} \"\n                \"until the active CIFS batch is finalized.\"\n            )\n        else:\n            log.info(f\"Unmounting Samba SFTP mount point {mp.mountPath} before removal.\")\n            try:\n                subprocess.run(\n                    [\"umount\", mp.mountPath],\n                    stdout=subprocess.PIPE,\n                    stderr=subprocess.PIPE,\n                    check=True,\n                )\n            except subprocess.CalledProcessError as e:\n                stderr = e.stderr.decode().strip() if e.stderr else str(e)\n                msg=f\"Failed to unmount Samba SFTP mount point {mp.mountPath} before removal: {stderr}\"\n                log.error(msg)\n                log.exception(e)\n                raise RuntimeError(msg) from e",
+      "expected": 1
+    },
+    {
+      "path": "sftp/sambaPoint.py",
+      "old": "        if smbHelp.isMounted(base_share_name, forceUser):",
+      "new": "        if smbHelp.isMounted(base_share_name, for_user):",
+      "expected": 1
+    },
+    {
+      "path": "sftp/sambaPoint.py",
+      "old": "    def removeQueuedMountpointDirectories()->bool:\n        \"\"\"Odstraní prázdné adresáře již odmountovaných a z konfigurace odebraných mountpointů.\"\"\"\n        success = True\n        for mnt in list(smbHelp.toRemove):\n            if os.path.isdir(mnt):\n                log.info(f\"Removing mount point directory {mnt}.\")\n                try:\n                    os.rmdir(mnt)\n                    log.info(f\"Mount point directory {mnt} removed successfully.\")\n                except Exception as e:\n                    success = False\n                    log.error(f\"Failed to remove mount point directory {mnt}: {e}\")\n                    log.exception(e)\n        smbHelp.toRemove.clear()\n        return success",
+      "new": "    def removeQueuedMountpointDirectories(preserve_targets:set[str]|None=None)->bool:\n        \"\"\"Odstraní obsolete prázdné mountpoint adresáře až po odmountování CIFS.\n\n        Cíl, který je stále přítomen ve výsledném /etc/fstab, mohl být v témže\n        batchi odstraněn a znovu vytvořen (typicky změna RO/RW nebo real path).\n        Takový adresář se nesmí smazat z fronty ``toRemove``.\n        \"\"\"\n        success = True\n        preserve = preserve_targets or set()\n        for mnt in list(smbHelp.toRemove):\n            if mnt in preserve:\n                log.info(f\"Keeping mount point directory {mnt}; it is present in final CIFS configuration.\")\n                continue\n            if os.path.isdir(mnt):\n                log.info(f\"Removing mount point directory {mnt}.\")\n                try:\n                    os.rmdir(mnt)\n                    log.info(f\"Mount point directory {mnt} removed successfully.\")\n                except Exception as e:\n                    success = False\n                    log.error(f\"Failed to remove mount point directory {mnt}: {e}\")\n                    log.exception(e)\n        smbHelp.toRemove.clear()\n        return success",
+      "expected": 1
+    },
+    {
+      "path": "sftp/sambaPoint.py",
+      "old": "            configured_mounts = smbHelp.getConfiguredManagedCIFS()\n\n            if not smbHelp.removeQueuedMountpointDirectories():\n                raise RuntimeError(\"Failed to remove one or more obsolete mountpoint directories.\")\n\n            smbHelp.unmountAllManagedCIFS()\n\n            if smbHelp.requireSambaRestart:",
+      "new": "            configured_mounts = smbHelp.getConfiguredManagedCIFS()\n            configured_targets = {target for _, target in configured_mounts}\n\n            # Fyzický stav měníme až zde, na hranici batch transakce. Nejdříve\n            # odmountujeme všechny spravované CIFS mounty, potom uklidíme pouze\n            # adresáře, které nejsou součástí výsledného desired stavu.\n            smbHelp.unmountAllManagedCIFS()\n\n            if not smbHelp.removeQueuedMountpointDirectories(configured_targets):\n                raise RuntimeError(\"Failed to remove one or more obsolete mountpoint directories.\")\n\n            if smbHelp.requireSambaRestart:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/sambaPoint.py",
+      "old": "def postRemoveAllMountpoints()->bool:\n    \"\"\"Odstraní prázdné adresáře a dokončí změny, nebo service část odloží do konce dávky.\"\"\"\n    if not smbHelp.removeQueuedMountpointDirectories():\n        return False\n    if smbHelp._batchDepth > 0:\n        log.info(\"Samba/CIFS removal post-processing deferred until the active batch is complete.\")\n        return True\n    return smbHelp.finalizeMountpointChanges()",
+      "new": "def postRemoveAllMountpoints()->bool:\n    \"\"\"Dokončí odebrání mountpointů až na hranici aktivní CIFS dávky.\n\n    Uvnitř batch transakce se nesmí fyzicky odmountovávat ani mazat adresáře;\n    stejné cílové místo může být ještě v témže průchodu znovu vytvořeno.\n    \"\"\"\n    if smbHelp._batchDepth > 0:\n        log.info(\"Samba/CIFS removal post-processing deferred until the active batch is complete.\")\n        return True\n    return smbHelp.finalizeMountpointChanges()",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_sftp_rw_reconcile.py",
+      "old": "from unittest.mock import patch",
+      "new": "from unittest.mock import Mock, call, patch",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_sftp_rw_reconcile.py",
+      "old": "\n\nclass ParserRwReconcileTests(unittest.TestCase):",
+      "new": "\n\nclass SambaBatchTransactionTests(unittest.TestCase):\n    def setUp(self):\n        samba_module.smbHelp._batchDepth = 0\n        samba_module.smbHelp.requireSambaRestart = False\n        samba_module.smbHelp.toMount.clear()\n        samba_module.smbHelp.toRemove.clear()\n\n    def tearDown(self):\n        samba_module.smbHelp._batchDepth = 0\n        samba_module.smbHelp.requireSambaRestart = False\n        samba_module.smbHelp.toMount.clear()\n        samba_module.smbHelp.toRemove.clear()\n\n    def test_post_remove_does_not_cleanup_inside_active_batch(self):\n        samba_module.smbHelp._batchDepth = 1\n        samba_module.smbHelp.toRemove.append(\"/jail/alice/docs\")\n\n        with patch.object(\n            samba_module.smbHelp, \"removeQueuedMountpointDirectories\"\n        ) as cleanup, patch.object(\n            samba_module.smbHelp, \"finalizeMountpointChanges\"\n        ) as finalize:\n            self.assertTrue(samba_module.postRemoveAllMountpoints())\n\n        cleanup.assert_not_called()\n        finalize.assert_not_called()\n        self.assertEqual(samba_module.smbHelp.toRemove, [\"/jail/alice/docs\"])\n\n    def test_finalize_unmounts_before_cleanup_and_preserves_final_targets(self):\n        events = []\n        configured = [(\"//127.0.0.1/sftp_mount_alice_docs\", \"/jail/alice/docs\")]\n        samba_module.smbHelp.requireSambaRestart = True\n        samba_module.smbHelp.toRemove.extend([\"/jail/alice/docs\", \"/jail/alice/obsolete\"])\n\n        def cleanup(preserve):\n            events.append((\"cleanup\", set(preserve)))\n            return True\n\n        with patch.object(\n            samba_module.smbHelp, \"getConfiguredManagedCIFS\", return_value=configured\n        ), patch.object(\n            samba_module.smbHelp, \"unmountAllManagedCIFS\", side_effect=lambda: events.append((\"unmount\", None))\n        ), patch.object(\n            samba_module.smbHelp, \"removeQueuedMountpointDirectories\", side_effect=cleanup\n        ), patch.object(\n            samba_module, \"reloadSambaService\", side_effect=lambda: events.append((\"samba\", None)) or True\n        ), patch.object(\n            samba_module.smbHelp, \"reloadSystemdDaemon\", side_effect=lambda: events.append((\"systemd\", None)) or True\n        ), patch.object(\n            samba_module.smbHelp, \"mountConfiguredManagedCIFS\", side_effect=lambda mounts: events.append((\"mount\", mounts))\n        ):\n            self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())\n\n        self.assertEqual(\n            events,\n            [\n                (\"unmount\", None),\n                (\"cleanup\", {\"/jail/alice/docs\"}),\n                (\"samba\", None),\n                (\"systemd\", None),\n                (\"mount\", configured),\n            ],\n        )\n\n    def test_remove_queue_keeps_target_recreated_in_same_batch(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            keep = Path(tmp) / \"keep\"\n            obsolete = Path(tmp) / \"obsolete\"\n            keep.mkdir()\n            obsolete.mkdir()\n            samba_module.smbHelp.toRemove.extend([str(keep), str(obsolete)])\n\n            self.assertTrue(\n                samba_module.smbHelp.removeQueuedMountpointDirectories({str(keep)})\n            )\n\n            self.assertTrue(keep.is_dir())\n            self.assertFalse(obsolete.exists())\n            self.assertEqual(samba_module.smbHelp.toRemove, [])\n\n    def test_remove_share_defers_physical_unmount_inside_batch(self):\n        mp = types.SimpleNamespace(mountName=\"docs\", mountPath=\"/jail/alice/docs\")\n        samba_module.smbHelp._batchDepth = 1\n\n        with patch.object(\n            samba_module.smbHelp, \"isMounted\", return_value=True\n        ), patch.object(\n            samba_module.smbHelp, \"removeFstabCIFScfg\", return_value=True\n        ), patch.object(\n            samba_module.smbHelp, \"removeSambaSharePoint\"\n        ), patch.object(\n            samba_module.subprocess, \"run\"\n        ) as run:\n            samba_module.removeSharePoint(\"alice\", mp)\n\n        run.assert_not_called()\n        self.assertIn(\"/jail/alice/docs\", samba_module.smbHelp.toRemove)\n\n    def test_ensure_mountpoint_checks_mounted_state_with_sftp_user(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            jail = Path(tmp) / \"jail\"\n            source = Path(tmp) / \"source\"\n            jail.mkdir()\n            source.mkdir()\n            mp = samba_module.sftpUserMountpoint(\n                jailPath=str(jail),\n                line=\"docs\",\n                val=str(source),\n                sambaVault=True,\n                rw=True,\n            )\n\n            with patch.object(\n                mp, \"forUser\", return_value=(\"source-owner\", 1000)\n            ), patch.object(\n                mp, \"forGroup\", return_value=(\"source-group\", 1000)\n            ), patch.object(\n                samba_module, \"initEnsureSamba\"\n            ), patch.object(\n                samba_module.os, \"chown\"\n            ), patch.object(\n                samba_module.os, \"chmod\"\n            ), patch.object(\n                samba_module.smbHelp, \"ensureSambaSharePoint\"\n            ), patch.object(\n                samba_module.smbHelp, \"ensureFstabCIFScfg\", return_value=True\n            ), patch.object(\n                samba_module.smbHelp, \"isMounted\", return_value=True\n            ) as is_mounted:\n                samba_module.ensureMountpoint(\"alice\", mp)\n\n            is_mounted.assert_called_once_with(\"docs\", \"alice\")\n\n\nclass ParserRwReconcileTests(unittest.TestCase):",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.22\"\n\n# 1.2.22: SFTP reconciliation accepts in-memory config and exposes concrete per-user apply errors",
+      "new": "__version__ = \"1.2.23\"\n\n# 1.2.23: Samba/CIFS batch defers physical cleanup, preserves recreated targets, and uses correct SFTP share identity\n# 1.2.22: SFTP reconciliation accepts in-memory config and exposes concrete per-user apply errors",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "assert v == \"1.2.22\"",
+      "new": "assert v == \"1.2.23\"",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-fs-utils.yml",
+      "old": "assert version == \"1.2.22\"",
+      "new": "assert version == \"1.2.23\"",
+      "expected": 1
+    },
+    {
+      "path": "sftp/AGENTS.md",
+      "old": "- Samba/CIFS Apply is a transaction: configuration changes may be queued, but before reloading or restarting `smbd` all managed loopback CIFS mounts must be unmounted; then reload Samba, run exactly one `systemctl daemon-reload`, and remount every managed CIFS entry still present in `/etc/fstab`.",
+      "new": "- Samba/CIFS Apply is a transaction: configuration changes may be queued, but no physical CIFS unmount or mountpoint-directory cleanup may occur while a batch is active. At finalization, read the final managed CIFS set from `/etc/fstab`, unmount all managed loopback CIFS mounts first, remove only obsolete queued directories that are not targets in that final set, then reload Samba, run exactly one `systemctl daemon-reload`, and remount every managed CIFS entry still present in `/etc/fstab`. This preserves a target removed and recreated in the same batch (for example RO/RW or real-path changes).",
+      "expected": 1
+    }
+  ]
+}
