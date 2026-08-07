@@ -112,12 +112,6 @@ def main() -> None:
 
             target = resolve_repo_file(raw_path)
             source = buffers.get(target, target.read_bytes())
-            if raw_path == "sftp/sambaPoint.py" and index == 1:
-                needle = b"smbHelp.isMounted"
-                pos = source.find(needle)
-                print(f"DIAG target={target} size={len(source)} old={old.encode('utf-8')!r} pos={pos}")
-                if pos >= 0:
-                    print(f"DIAG source={source[max(0, pos-80):pos+160]!r}")
             try:
                 old_bytes, new_bytes, newline_mode = replacement_bytes(old, new, source, expected)
             except SystemExit as exc:
