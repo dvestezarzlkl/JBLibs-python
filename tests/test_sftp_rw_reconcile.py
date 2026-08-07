@@ -148,7 +148,9 @@ class ParserRwReconcileTests(unittest.TestCase):
                 patch.object(parser_module.smb, "postEnsureAllMountpoints", return_value=True),
                 patch.object(parser_module.ssh, "ensureJail", return_value=str(Path(tmp) / "jail")),
             ):
-                result = parser_module.createUserFromJson()
+                result = parser_module.createUserFromJson(
+                    cfg=json.loads(cfg_path.read_text(encoding="utf-8"))
+                )
 
             self.assertIsNotNone(result)
             self.assertEqual(manager.ensured, [("docs", str(real_path), True, desired_rw)])
