@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "commit_message": "Fix c_menu exit veto handling",
+  "replacements": [
+    {
+      "path": "c_menu.py",
+      "old": "                    if not x is False:\n                        # návrat bez chyby a zákazu\n                        self._selectedItem=None # zrušíme výběr je to EXIT\n                        return",
+      "new": "                    if e is not False:\n                        # návrat bez chyby a zákazu\n                        self._selectedItem=None # zrušíme výběr je to EXIT\n                        return",
+      "expected": 1
+    },
+    {
+      "path": "c_menu.py",
+      "old": "                            if not x  is False:\n                                return",
+      "new": "                            if e is not False:\n                                return",
+      "expected": 2
+    },
+    {
+      "path": "tests/test_c_menu_interrupt.py",
+      "old": "    def test_keyboard_interrupt_from_active_action_is_not_swallowed(self):\n",
+      "new": "    def test_escape_respects_on_exit_veto_and_keeps_menu_running(self):\n        menu = c_menu_module.c_menu(menu=[], quitEnable=False)\n        menu.onExitMenu = Mock(side_effect=[False, None])\n\n        result = self.run_with_mocked_screen(menu, [False, False])\n\n        self.assertIsNone(result)\n        self.assertEqual(menu.onExitMenu.call_count, 2)\n\n    def test_end_menu_action_respects_on_exit_veto(self):\n        item = c_menu_module.c_menu_item(\n            \"Back-like action\",\n            \"a\",\n            lambda _item: c_menu_module.onSelReturn(endMenu=True),\n        )\n        menu = c_menu_module.c_menu(menu=[item], quitEnable=False)\n        menu.onExitMenu = Mock(side_effect=[False, None])\n\n        result = self.run_with_mocked_screen(\n            menu,\n            [\"a\", \"\\r\", KeyboardInterrupt()],\n        )\n\n        self.assertIsNone(result)\n        self.assertEqual(menu.onExitMenu.call_count, 2)\n\n    def test_keyboard_interrupt_from_active_action_is_not_swallowed(self):\n",
+      "expected": 1
+    },
+    {
+      "path": "c_menu.md",
+      "old": "- `onExitMenu (Callable[['c_menu'], Union[None, bool]])`: Funkce volaná při ukončení menu. Pokud vrátí `False`, menu se neukončí.",
+      "new": "- `onExitMenu (Callable[['c_menu'], Union[None, bool]])`: Funkce volaná při ukončení menu. Pokud vrátí `False`, menu se neukončí; veto platí shodně pro ESC, Back/`endMenu=True` i registrovanou klávesovou akci.",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.20\"\n\n# 1.2.20: SFTP Apply reconciles Samba RO/RW changes even when alias and real path stay unchanged",
+      "new": "__version__ = \"1.2.21\"\n\n# 1.2.21: c_menu consistently honors onExitMenu=False for ESC and endMenu exit paths\n# 1.2.20: SFTP Apply reconciles Samba RO/RW changes even when alias and real path stay unchanged",
+      "expected": 1
+    }
+  ]
+}
