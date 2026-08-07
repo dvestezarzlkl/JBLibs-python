@@ -1569,7 +1569,7 @@ class c_menu:
                         # chybu předáme
                         self._selectedItem=None # zrušíme výběr je to EXIT
                         return e
-                    if not x is False:
+                    if e is not False:
                         # návrat bez chyby a zákazu
                         self._selectedItem=None # zrušíme výběr je to EXIT
                         return                
@@ -1610,7 +1610,7 @@ class c_menu:
                             e=self.callExitMenu(item)
                             if isinstance(e,str):
                                 return e
-                            if not x  is False:
+                            if e is not False:
                                 return
                             
                     else:
@@ -1700,7 +1700,7 @@ class c_menu:
                 e=self.callExitMenu(item)
                 if isinstance(e,str):
                     return e
-                if not x  is False:
+                if e is not False:
                     return
             
             self._selectedItem = None

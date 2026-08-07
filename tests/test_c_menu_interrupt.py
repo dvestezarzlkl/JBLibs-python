@@ -91,6 +91,32 @@ class CMenuKeyboardInterruptTests(unittest.TestCase):
         self.assertEqual(menu.onExitMenu.call_count, 2)
         self.assertIsInstance(menu.lastReturn, c_menu_module.onSelReturn)
 
+    def test_escape_respects_on_exit_veto_and_keeps_menu_running(self):
+        menu = c_menu_module.c_menu(menu=[], quitEnable=False)
+        menu.onExitMenu = Mock(side_effect=[False, None])
+
+        result = self.run_with_mocked_screen(menu, [False, False])
+
+        self.assertIsNone(result)
+        self.assertEqual(menu.onExitMenu.call_count, 2)
+
+    def test_end_menu_action_respects_on_exit_veto(self):
+        item = c_menu_module.c_menu_item(
+            "Back-like action",
+            "a",
+            lambda _item: c_menu_module.onSelReturn(endMenu=True),
+        )
+        menu = c_menu_module.c_menu(menu=[item], quitEnable=False)
+        menu.onExitMenu = Mock(side_effect=[False, None])
+
+        result = self.run_with_mocked_screen(
+            menu,
+            ["a", "\r", KeyboardInterrupt()],
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(menu.onExitMenu.call_count, 2)
+
     def test_keyboard_interrupt_from_active_action_is_not_swallowed(self):
         def interrupted_action(_item):
             raise KeyboardInterrupt()

@@ -1,5 +1,6 @@
-__version__ = "1.2.20"
+__version__ = "1.2.21"
 
+# 1.2.21: c_menu consistently honors onExitMenu=False for ESC, endMenu, and registered-key exit paths
 # 1.2.20: SFTP Apply reconciles Samba RO/RW changes even when alias and real path stay unchanged
 # 1.2.19: c_menu adds a persistent global title context with per-menu opt-out
 # 1.2.18: system disk detection follows child partitions and filtering removes the complete live system disk
