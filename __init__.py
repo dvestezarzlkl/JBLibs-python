@@ -1,5 +1,6 @@
-__version__ = "1.2.22"
+__version__ = "1.2.23"
 
+# 1.2.23: Samba/CIFS batch defers physical cleanup, preserves recreated targets, and uses correct SFTP share identity
 # 1.2.22: SFTP reconciliation accepts in-memory config and exposes concrete per-user apply errors
 # 1.2.21: c_menu consistently honors onExitMenu=False for ESC, endMenu, and registered-key exit paths
 # 1.2.20: SFTP Apply reconciles Samba RO/RW changes even when alias and real path stay unchanged

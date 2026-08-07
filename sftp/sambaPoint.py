@@ -596,10 +596,19 @@ class smbHelp:
                 raise RuntimeError(f"Failed to mount configured CIFS mount {target}: {stderr}") from e
 
     @staticmethod
-    def removeQueuedMountpointDirectories()->bool:
-        """Odstraní prázdné adresáře již odmountovaných a z konfigurace odebraných mountpointů."""
+    def removeQueuedMountpointDirectories(preserve_targets:set[str]|None=None)->bool:
+        """Odstraní obsolete prázdné mountpoint adresáře až po odmountování CIFS.
+
+        Cíl, který je stále přítomen ve výsledném /etc/fstab, mohl být v témže
+        batchi odstraněn a znovu vytvořen (typicky změna RO/RW nebo real path).
+        Takový adresář se nesmí smazat z fronty ``toRemove``.
+        """
         success = True
+        preserve = preserve_targets or set()
         for mnt in list(smbHelp.toRemove):
+            if mnt in preserve:
+                log.info(f"Keeping mount point directory {mnt}; it is present in final CIFS configuration.")
+                continue
             if os.path.isdir(mnt):
                 log.info(f"Removing mount point directory {mnt}.")
                 try:
@@ -627,11 +636,12 @@ class smbHelp:
 
         try:
             configured_mounts = smbHelp.getConfiguredManagedCIFS()
-
-            if not smbHelp.removeQueuedMountpointDirectories():
-                raise RuntimeError("Failed to remove one or more obsolete mountpoint directories.")
+            configured_targets = {target for _, target in configured_mounts}
 
             smbHelp.unmountAllManagedCIFS()
+
+            if not smbHelp.removeQueuedMountpointDirectories(configured_targets):
+                raise RuntimeError("Failed to remove one or more obsolete mountpoint directories.")
 
             if smbHelp.requireSambaRestart:
                 if not reloadSambaService():
@@ -809,17 +819,17 @@ def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
     log.info(f"Removing Samba SFTP mount point for share {share_base_name}.")
     cifs_path=smbHelp.getCIFSpath(share_base_name, for_user)
     
-    if smbHelp.isMounted(share_base_name, for_user):
+    if smbHelp._batchDepth <= 0 and smbHelp.isMounted(share_base_name, for_user):
         # umount it
-        log.info(f"Unmounting Samba SFTP mount point {cifs_path} before removal.")
+        log.info(f"Unmounting Samba SFTP mount point {mp.mountPath} before removal.")
         try:
             import subprocess
             subprocess.run([
                 "umount",
-                cifs_path
+                mp.mountPath
             ], check=True)
         except subprocess.CalledProcessError as e:
-            msg=f"Failed to unmount Samba SFTP mount point {cifs_path} before removal: {e}"
+            msg=f"Failed to unmount Samba SFTP mount point {mp.mountPath} before removal: {e}"
             log.error(msg)
             log.exception(e)
             raise RuntimeError(msg)
@@ -904,7 +914,7 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
         # check mounted
         log.info(f" - Ensuring Samba SFTP mount point {base_share_name} is mounted.")
         cifs_path=smbHelp.getCIFSpath(base_share_name, for_user)
-        if smbHelp.isMounted(base_share_name, forceUser):
+        if smbHelp.isMounted(base_share_name, for_user):
             log.info(f"< Samba SFTP mount point {cifs_path} is already mounted.")
             # už je namountováno
             return cifs_path
@@ -928,9 +938,11 @@ def postEnsureAllMountpoints()->bool:
     return smbHelp.finalizeMountpointChanges()
 
 def postRemoveAllMountpoints()->bool:
-    """Odstraní prázdné adresáře a dokončí změny, nebo service část odloží do konce dávky."""
-    if not smbHelp.removeQueuedMountpointDirectories():
-        return False
+    """Dokončí odebrání mountpointů až na hranici aktivní CIFS dávky.
+
+    Uvnitř batch transakce se nesmí fyzicky odmountovávat ani mazat adresáře;
+    stejné cílové místo může být ještě v témže průchodu znovu vytvořeno.
+    """
     if smbHelp._batchDepth > 0:
         log.info("Samba/CIFS removal post-processing deferred until the active batch is complete.")
         return True
