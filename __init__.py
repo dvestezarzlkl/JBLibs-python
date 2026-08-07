@@ -1,5 +1,6 @@
-__version__ = "1.2.19"
+__version__ = "1.2.20"
 
+# 1.2.20: SFTP Apply reconciles Samba RO/RW changes even when alias and real path stay unchanged
 # 1.2.19: c_menu adds a persistent global title context with per-menu opt-out
 # 1.2.18: system disk detection follows child partitions and filtering removes the complete live system disk
 # 1.2.17: missing lsof no longer terminates applications during SFTP mount module import
