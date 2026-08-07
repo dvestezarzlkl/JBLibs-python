@@ -12,7 +12,13 @@
       "path": "c_menu.py",
       "old": "                            if not x  is False:\n                                return",
       "new": "                            if e is not False:\n                                return",
-      "expected": 2
+      "expected": 1
+    },
+    {
+      "path": "c_menu.py",
+      "old": "                if not x  is False:\n                    return",
+      "new": "                if e is not False:\n                    return",
+      "expected": 1
     },
     {
       "path": "tests/test_c_menu_interrupt.py",
