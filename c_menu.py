@@ -538,6 +538,17 @@ class c_menu_block_items:
 class c_menu:
     """ Třída reprezentující menu, doporučuje se extend s přepisem potřebných hodnot """
 
+    globalTitle: Any = None
+    """Globální titulní kontext společný pro všechny c_menu instance.
+
+    Podporuje stejné vstupy jako c_menu_block_items nebo callable bez parametrů,
+    který je vrátí. Hodnota se čte při každém překreslení, takže aplikace může
+    zobrazovat například identitu aktuálního hostu ve všech podmenu.
+    """
+
+    showGlobalTitle: bool = True
+    """Pokud False, globální titulní kontext se pro tuto instanci nezobrazí."""
+
     menu: list[c_menu_item] = []
     """ Položky menu mohou být: 
         - c_menu_item = normální položka menu
@@ -737,6 +748,7 @@ class c_menu:
         
         # init s možností override ze static redefinice v child
         self.title=self.title
+        self.showGlobalTitle=self.showGlobalTitle
         self.afterTitle=self.afterTitle
         self.afterMenu=self.afterMenu
         self.lastReturn=self.lastReturn
@@ -1268,7 +1280,23 @@ class c_menu:
         if isinstance(tt,str):
             tt=tt.splitlines()
         tt=c_menu_block_items(tt)
-        
+
+        if self.showGlobalTitle and c_menu.globalTitle is not None:
+            global_title = c_menu.globalTitle
+            if callable(global_title):
+                global_title = global_title()
+            if isinstance(global_title, str):
+                global_title = c_menu_block_items(global_title)
+            elif not isinstance(global_title, c_menu_block_items):
+                global_title = c_menu_block_items(global_title)
+            if global_title:
+                tt = c_menu_block_items(
+                    [*global_title(), *tt()],
+                    rightBrackets=tt.rightBrackets,
+                    blockColor=tt.blockColor,
+                    blockInverse=tt.blockInverse,
+                )
+
         st=self.subTitle
         if isinstance(st,str):
             st=st.splitlines()

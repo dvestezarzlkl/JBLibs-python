@@ -1,5 +1,6 @@
-__version__ = "1.2.18"
+__version__ = "1.2.19"
 
+# 1.2.19: c_menu adds a persistent global title context with per-menu opt-out
 # 1.2.18: system disk detection follows child partitions and filtering removes the complete live system disk
 # 1.2.17: missing lsof no longer terminates applications during SFTP mount module import
 # 1.2.16: c_menu exits cleanly on Ctrl+C while waiting for input without swallowing interrupts from active actions

@@ -20,6 +20,45 @@ if PACKAGE_NAME not in sys.modules:
 c_menu_module = importlib.import_module(f"{PACKAGE_NAME}.c_menu")
 
 
+class CMenuGlobalTitleTests(unittest.TestCase):
+    def tearDown(self):
+        c_menu_module.c_menu.globalTitle = None
+
+    def test_global_title_is_prepended_to_menu_title(self):
+        c_menu_module.c_menu.globalTitle = c_menu_module.c_menu_block_items([
+            ("Host", "server-01"),
+        ])
+        menu = c_menu_module.c_menu(
+            menu=[],
+            quitEnable=False,
+            title=c_menu_module.c_menu_block_items([("Disk manager", "c")]),
+        )
+        out = []
+
+        menu._c_menu__print(toOut=out)
+
+        text = "\n".join(out)
+        self.assertIn("Host", text)
+        self.assertIn("server-01", text)
+        self.assertLess(text.index("Host"), text.index("Disk manager"))
+
+    def test_global_title_can_be_callable_and_disabled_per_menu(self):
+        c_menu_module.c_menu.globalTitle = lambda: c_menu_module.c_menu_block_items([
+            ("Host", "server-02"),
+        ])
+        visible = c_menu_module.c_menu(menu=[], quitEnable=False, title="Visible")
+        hidden = c_menu_module.c_menu(menu=[], quitEnable=False, title="Hidden")
+        hidden.showGlobalTitle = False
+        visible_out = []
+        hidden_out = []
+
+        visible._c_menu__print(toOut=visible_out)
+        hidden._c_menu__print(toOut=hidden_out)
+
+        self.assertIn("server-02", "\n".join(visible_out))
+        self.assertNotIn("server-02", "\n".join(hidden_out))
+
+
 class CMenuKeyboardInterruptTests(unittest.TestCase):
     def run_with_mocked_screen(self, menu, get_key_side_effect):
         with (
