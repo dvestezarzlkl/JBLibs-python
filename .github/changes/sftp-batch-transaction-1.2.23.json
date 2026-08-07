@@ -63,18 +63,6 @@
       "expected": 1
     },
     {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "assert v == \"1.2.22\"",
-      "new": "assert v == \"1.2.23\"",
-      "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-fs-utils.yml",
-      "old": "assert version == \"1.2.22\"",
-      "new": "assert version == \"1.2.23\"",
-      "expected": 1
-    },
-    {
       "path": "sftp/AGENTS.md",
       "old": "- Samba/CIFS Apply is a transaction: configuration changes may be queued, but before reloading or restarting `smbd` all managed loopback CIFS mounts must be unmounted; then reload Samba, run exactly one `systemctl daemon-reload`, and remount every managed CIFS entry still present in `/etc/fstab`.",
       "new": "- Samba/CIFS Apply is a transaction: configuration changes may be queued, but no physical CIFS unmount or mountpoint-directory cleanup may occur while a batch is active. At finalization, read the final managed CIFS set from `/etc/fstab`, unmount all managed loopback CIFS mounts first, remove only obsolete queued directories that are not targets in that final set, then reload Samba, run exactly one `systemctl daemon-reload`, and remount every managed CIFS entry still present in `/etc/fstab`. This preserves a target removed and recreated in the same batch (for example RO/RW or real-path changes).",
