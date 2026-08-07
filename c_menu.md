@@ -60,7 +60,7 @@ Hlavní třída menu, určená k rozšíření pro konkrétní aplikace. Menu se
 - `onEnterMenu (Callable[[], Union[str, None]])`: Funkce volaná před prvním zobrazením menu.
 - `onShowMenu (Callable[['c_menu'], None])`: Funkce volaná před každým zobrazením menu.
 - `onShownMenu (Callable[['c_menu'], None])`: Funkce volaná po každém zobrazení menu.
-- `onExitMenu (Callable[['c_menu'], Union[None, bool]])`: Funkce volaná při ukončení menu. Pokud vrátí `False`, menu se neukončí.
+- `onExitMenu (Callable[['c_menu'], Union[None, bool]])`: Funkce volaná při ukončení menu. Pokud vrátí `False`, menu se neukončí; veto platí shodně pro ESC, Back/`endMenu=True` i registrovanou klávesovou akci.
 - `choiceBack (c_menu_item)`: Položka menu pro funkci "Zpět" v podmenu. Pokud `None`, nebude aktivní.
 - `ESC_is_quit (bool)`: Pokud je `True`, stisk ESC ukončí menu a zobrazí volbu 'ESC - Zpět'.
 - `choiceQuit (c_menu_item)`: Položka menu pro funkci "Konec". Pokud `None`, nebude aktivní.
