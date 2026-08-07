@@ -173,12 +173,21 @@ def createUserFromJson(file:str=None)->Union[list['sftpUserMng']|None]:
                 desired_path = desired_mounts.get(existing_mount.mountName)
                 path_changed = desired_path is not None and str(desired_path) != existing_mount.realPath
                 mode_changed = existing_mount.isSambaVault() != sambaVault
-                if desired_path is None or path_changed or mode_changed:
+                access_changed = False
+                if desired_path is not None and sambaVault and not mode_changed:
+                    desired_perms = mpSet.get(existing_mount.mountName, mountpointPerms({}))
+                    current_read_only = smb.smbHelp.getSambaShareReadOnly(existing_mount.mountName, username)
+                    desired_read_only = not desired_perms.rw
+                    access_changed = current_read_only is None or current_read_only != desired_read_only
+
+                if desired_path is None or path_changed or mode_changed or access_changed:
                     reason = "removed from configuration"
                     if path_changed:
                         reason = "real path changed"
                     elif mode_changed:
                         reason = "mount type changed"
+                    elif access_changed:
+                        reason = "read/write mode changed"
                     log.info(f" - Removing mountpoint '{existing_mount.mountName}' for user {username}: {reason}.")
                     u.mountpointManager.deleteMountpoint(existing_mount.mountName)
 

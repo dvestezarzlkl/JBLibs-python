@@ -260,6 +260,49 @@ class smbHelp:
         smbHelp.write_or_replace_samba_section(share_name, "")  # přepíšeme prázdným obsahem – smaže se
             
     @staticmethod
+    def getSambaShareReadOnly(share_base_name:str, for_user:str)->bool|None:
+        """Return the managed Samba share read-only state from smb.conf.
+
+        The SFTP mount manifest historically stores only alias and real path, so
+        the effective Samba share is the authoritative source for RO/RW
+        reconciliation during Apply. ``None`` means the section or setting could
+        not be determined and callers should repair/recreate the managed point.
+        """
+        share_name = makeShareNameSafe(share_base_name, for_user, True)
+        conf_file = os.path.join(SMB_CFG_DIR, "smb.conf")
+        if not os.path.isfile(conf_file):
+            return None
+
+        in_section = False
+        try:
+            with open(conf_file, "r") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith(("#", ";")):
+                        continue
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        current = stripped[1:-1].strip()
+                        if in_section:
+                            break
+                        in_section = current.lower() == share_name.lower()
+                        continue
+                    if not in_section or "=" not in stripped:
+                        continue
+                    key, value = stripped.split("=", 1)
+                    if key.strip().lower() != "read only":
+                        continue
+                    normalized = value.split("#", 1)[0].split(";", 1)[0].strip().lower()
+                    if normalized in ("yes", "true", "1"):
+                        return True
+                    if normalized in ("no", "false", "0"):
+                        return False
+                    return None
+        except Exception as e:
+            log.warning(f"Failed to read Samba access mode for share {share_name}: {e}")
+            return None
+        return None
+
+    @staticmethod
     def reloadSystemdDaemon()->bool:
         """Reload systemd po změně /etc/fstab.
         Volání je synchronní; další pevná čekací doba není potřeba.
