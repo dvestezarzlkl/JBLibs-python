@@ -5,7 +5,7 @@
     {
       "path": "c_menu.py",
       "old": "        sys.stdout.write(\n            f\"\\033[H{o}\\033[J\"\n        )\n        \n        return ok",
-      "new": "        sys.stdout.write(\n            f\"\\033[H{o}\\033[J\"\n        )\n        # Ensure the fully rendered frame reaches TTY/PTY frontends before\n        # getKey() enters its blocking read. Some wrappers do not line-buffer\n        # ANSI cursor-control output reliably.\n        sys.stdout.flush()\n        \n        return ok",
+      "new": "        sys.stdout.write(\n            f\"\\033[H{o}\\033[J\"\n        )\n        # Ensure the fully rendered frame reaches TTY/PTY frontends before\n        # getKey() enters its blocking read. Some wrappers do not line-buffer\n        # ANSI cursor-control output reliably.\n        sys.stdout.flush()\n\n        return ok",
       "expected": 1
     },
     {
