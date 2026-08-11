@@ -1,5 +1,6 @@
-__version__ = "1.2.26"
+__version__ = "1.2.27"
 
+# 1.2.27: pre-delete SFTP backup drops empty detached mount targets and preserves only targets containing underlying data
 # 1.2.26: reusable timestamped directory backups and optional SFTP pre-delete home archival
 # 1.2.25: recursive SFTP jail cleanup detects bind mounts via mountinfo and fails closed
 # 1.2.24: managed Samba shares refresh live access connections and SFTP cleanup refuses hidden mounted data

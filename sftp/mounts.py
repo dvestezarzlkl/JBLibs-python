@@ -1,7 +1,7 @@
 from ..helper import getLogger
 log = getLogger("sftpMountsMng")
 
-import os,time
+import errno,os,time
 import grp
 import subprocess
 from libs.JBLibs.sftp.mountPoint import sftpUserMountpoint
@@ -249,6 +249,30 @@ class mountpointsManager:
         except Exception as e:
             raise RuntimeError(f"Failed to save mountpoints for user {self.username}: {e}")    
         
+    @staticmethod
+    def _cleanupPreservedTargetDirs(targets:list[str])->None:
+        """After physical unmount, remove empty preserved target directories.
+
+        Non-empty targets are intentionally kept so unexpected underlying data
+        is included in the pre-delete user backup. Other filesystem errors are
+        treated as unsafe and abort the teardown.
+        """
+        for target in targets:
+            try:
+                os.rmdir(target)
+                log.debug(f"Removed empty preserved SFTP mount target {target}.")
+            except FileNotFoundError:
+                continue
+            except OSError as e:
+                if e.errno == errno.ENOTEMPTY:
+                    log.warning(
+                        f"Preserving non-empty SFTP mount target {target} for pre-delete backup."
+                    )
+                    continue
+                raise RuntimeError(
+                    f"Failed to clean preserved SFTP mount target {target}: {e}"
+                ) from e
+
     def deleteMountpoint(self, mount_name:str|None, preserveTargetDirs:bool=False)->None:
         """Odstraní mountpoint s daným jménem z uživatelova jailu.
         Args:
@@ -259,6 +283,15 @@ class mountpointsManager:
         if not self.ok or not self.homeDir:
             raise RuntimeError(f"User {self.username} is not properly initialized.")
         
+        preserved_targets:list[str] = []
+        if preserveTargetDirs:
+            if mount_name is None:
+                preserved_targets = [mp.mountPath for mp in self.mountpoints]
+            else:
+                mp = self.getMountpointByName(mount_name)
+                if mp is not None:
+                    preserved_targets = [mp.mountPath]
+
         if mount_name is None:
             for mp in self.mountpoints[:]:  # kopie seznamu pro bezpečné mazání během iterace
                 self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)
@@ -270,6 +303,9 @@ class mountpointsManager:
 
         if not smb.postRemoveAllMountpoints():
             raise RuntimeError("Failed to finalize mountpoint removal changes.")
+
+        if preserveTargetDirs and preserved_targets:
+            self._cleanupPreservedTargetDirs(preserved_targets)
 
     def getMountpoints(self)->list[sftpUserMountpoint]:
         """Získá seznam mountpointů uživatele.
