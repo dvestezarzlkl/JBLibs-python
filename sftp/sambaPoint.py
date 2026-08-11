@@ -27,6 +27,8 @@ class smbHelp:
     requireSambaRestart:bool = False
     toRemove:list[str] = []
     """Fullpath seznam mount pointů, které je potřeba odebrat při odebrání mountpointů"""
+    toCloseShares:set[str] = set()
+    """Managed Samba shares whose established service connections must be closed after config reload."""
     _batchDepth:int = 0
     """Hloubka vnořené dávky změn; post-processing proběhne až při návratu na nulu."""
 
@@ -596,6 +598,59 @@ class smbHelp:
                 raise RuntimeError(f"Failed to mount configured CIFS mount {target}: {stderr}") from e
 
     @staticmethod
+    def closeQueuedSambaShares()->bool:
+        """Close established connections only for managed shares changed in this batch.
+
+        Samba reloads do not change parameters of already established service
+        connections. Closing the affected managed share after reload guarantees
+        that the next local CIFS mount negotiates the new access mode without
+        disconnecting unrelated Samba shares.
+        """
+        for share_name in sorted(smbHelp.toCloseShares):
+            if not share_name.startswith("sftp_mount_"):
+                log.error(f"Refusing to close unmanaged Samba share {share_name}.")
+                return False
+            log.info(f"Closing established Samba connections for managed share {share_name}.")
+            try:
+                proc = subprocess.run(
+                    ["smbcontrol", "smbd", "close-share", share_name],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+            except FileNotFoundError:
+                log.warning("smbcontrol is not available; a Samba restart is required to refresh managed share connections.")
+                return False
+            if proc.returncode != 0:
+                stderr = proc.stderr.decode().strip() if proc.stderr else f"return code {proc.returncode}"
+                log.warning(f"Failed to close managed Samba share {share_name}: {stderr}")
+                return False
+        return True
+
+    @staticmethod
+    def prepareConfiguredMountpointDirectories(targets:set[str])->None:
+        """Prepare unmounted CIFS targets so hidden stale data cannot be created.
+
+        Linux permits mounting over a non-empty directory, but doing so hides its
+        underlying data. Managed SFTP CIFS targets are therefore required to be
+        empty while unmounted and root-owned/non-writable before remounting.
+        """
+        for target in sorted(targets):
+            if not os.path.exists(target):
+                os.makedirs(target, exist_ok=True)
+            if not os.path.isdir(target):
+                raise RuntimeError(f"Managed CIFS target is not a directory: {target}")
+            if os.listdir(target):
+                raise RuntimeError(
+                    f"Managed CIFS target {target} is not empty while unmounted; "
+                    "refusing to hide underlying data beneath the mount."
+                )
+            try:
+                os.chown(target, 0, 0)
+                os.chmod(target, 0o555)
+            except Exception as e:
+                raise RuntimeError(f"Failed to secure managed CIFS target {target}: {e}") from e
+
+    @staticmethod
     def removeQueuedMountpointDirectories(preserve_targets:set[str]|None=None)->bool:
         """Odstraní obsolete prázdné mountpoint adresáře až po odmountování CIFS.
 
@@ -643,9 +698,15 @@ class smbHelp:
             if not smbHelp.removeQueuedMountpointDirectories(configured_targets):
                 raise RuntimeError("Failed to remove one or more obsolete mountpoint directories.")
 
+            smbHelp.prepareConfiguredMountpointDirectories(configured_targets)
+
             if smbHelp.requireSambaRestart:
                 if not reloadSambaService():
                     raise RuntimeError("Failed to reload or restart Samba service.")
+                if not smbHelp.closeQueuedSambaShares():
+                    log.warning("Targeted Samba share close failed; falling back to full smbd restart.")
+                    if not restartSambaService():
+                        raise RuntimeError("Failed to restart Samba after managed share close failure.")
 
             if not smbHelp.reloadSystemdDaemon():
                 raise RuntimeError("Failed to reload systemd after CIFS fstab changes.")
@@ -661,6 +722,7 @@ class smbHelp:
             smbHelp.requireSambaRestart = False
             smbHelp.toMount.clear()
             smbHelp.toRemove.clear()
+            smbHelp.toCloseShares.clear()
 
     @staticmethod
     def waitSambaAlive(timeout: float = 5.0, interval: float = 0.1) -> bool:
@@ -846,7 +908,8 @@ def removeSharePoint(for_user:str, mp:sftpUserMountpoint)->None:
     smbHelp.removeSambaSharePoint(share_base_name, for_user)
         
     smbHelp.requireSambaRestart = True
-    smbHelp.toRemove.append(mp.mountPath)        
+    smbHelp.toRemove.append(mp.mountPath)
+    smbHelp.toCloseShares.add(makeShareNameSafe(share_base_name, for_user, True))
     log.info(f"< Samba SFTP mount point for share {share_base_name} removed successfully.")
     
   
@@ -881,8 +944,11 @@ def ensureMountpoint(for_user:str, mp:sftpUserMountpoint)->str:
             log.info(f"Creating mount point directory: {mp.mountPath}")
             try:
                 os.makedirs(mp.mountPath, exist_ok=True)
-                os.chown(mp.mountPath, uid, gid)
-                os.chmod(mp.mountPath, 0o700)
+                # The unmounted target must not be writable by the SFTP user;
+                # otherwise data can be created underneath the CIFS mount and
+                # become hidden while the share is mounted.
+                os.chown(mp.mountPath, 0, 0)
+                os.chmod(mp.mountPath, 0o555)
             except Exception as e:
                 msg=f"Failed to create mount point directory {mp.mountPath}: {e}"
                 log.error(msg)

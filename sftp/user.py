@@ -1,7 +1,7 @@
 from ..helper import getLogger
 log= getLogger("sftp.User")
 
-import os,time
+import os,time,shutil
 from ..input import confirm
 import pwd
 import subprocess
@@ -190,11 +190,14 @@ class sftpUserMng:
         try:
             # otestujeme existenci loginctl
             subprocess.run(["loginctl", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            subprocess.run([
+            proc = subprocess.run([
                 "loginctl",
                 "terminate-user",
                 self.username
-            ])
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if proc.returncode != 0:
+                stderr = proc.stderr.decode().strip() if proc.stderr else f"return code {proc.returncode}"
+                log.debug(f"loginctl terminate-user for {self.username} was not required or failed non-critically: {stderr}")
         except subprocess.CalledProcessError as e:
             pass
 
@@ -216,26 +219,39 @@ class sftpUserMng:
         if proc.stdout.strip():
             raise RuntimeError(f"Some processes of {self.username} are still running.")
 
+    def __jailHasMountedPaths(self, jailPath:str)->bool:
+        """Return True if the jail itself or any descendant is still a mountpoint."""
+        if os.path.ismount(jailPath):
+            return True
+        for root, dirs, _ in os.walk(jailPath):
+            for name in dirs:
+                if os.path.ismount(os.path.join(root, name)):
+                    return True
+        return False
+
     def __delete_jail(self, queryNoEmpty:bool=True)->bool:
-        """Odstraní pouze domovský adresář uživatele.  
-        Nepoužívat, používá se interně při mazání uživatele.
-            
-        Raises:
-            RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při mazání domovského adresáře
-        """
+        """Remove the SFTP jail after mount cleanup and explicit data-loss confirmation."""
         try:
-            # teď by měly být mountpointy pryč a adresář prázdný, pokud ne tak tam někdo něco vytvořil mimo pointy a 
-            # mohou to být důležité data, takže dotaz
             jailPath = ssh.ensureJail(self.username, testOnly=True)
-            if jailPath and os.path.exists(jailPath) and os.listdir(jailPath) and queryNoEmpty:
+            if not jailPath or not os.path.exists(jailPath):
+                return True
+
+            entries = os.listdir(jailPath)
+            if entries and queryNoEmpty:
                 log.warning(f"Jail directory {jailPath} of user {self.username} is not empty after removing mountpoints.")
                 if not confirm(f"Home directory {jailPath} is not empty after removing mountpoints. Do you want to continue deleting the user and its home directory?\nThis will remove all data in the home directory. (y/n): "):
                     msg=f"User deletion for {jailPath} was cancelled by user due to non-empty home directory."
                     log.warning(msg)
                     return False
-            # odstraníme home
+
+            if self.__jailHasMountedPaths(jailPath):
+                log.error(f"Refusing to recursively delete jail {jailPath}: an active mount still exists below it.")
+                return False
+
             log.info(f"Deleting jail directory {jailPath} of user {self.username}.")
-            if os.path.exists(jailPath):
+            if entries:
+                shutil.rmtree(jailPath)
+            else:
                 os.rmdir(jailPath)
             return True
         except Exception as e:
