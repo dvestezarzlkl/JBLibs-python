@@ -1,5 +1,6 @@
-__version__ = "1.2.28"
+__version__ = "1.2.29"
 
+# 1.2.29: c_menu flushes each rendered ANSI frame before blocking for keyboard input
 # 1.2.28: Samba/CIFS batch failures expose their concrete exception; non-empty managed targets use a typed error with target path
 # 1.2.27: pre-delete SFTP backup drops empty detached mount targets and preserves only targets containing underlying data
 # 1.2.26: reusable timestamped directory backups and optional SFTP pre-delete home archival
