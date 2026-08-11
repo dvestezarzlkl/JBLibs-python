@@ -35,7 +35,7 @@
     {
       "path": "sftp/mounts.py",
       "old": "            self.deleteOneMountpoint(mp)\n            \n        if not smb.postRemoveAllMountpoints():",
-      "new": "            self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)\n            \n        if not smb.postRemoveAllMountpoints():",
+      "new": "            self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)\n\n        if not smb.postRemoveAllMountpoints():",
       "expected": 1
     },
     {
