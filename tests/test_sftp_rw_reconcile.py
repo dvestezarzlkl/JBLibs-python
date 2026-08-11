@@ -24,6 +24,7 @@ if "libs.JBLibs" not in sys.modules:
     sys.modules["libs.JBLibs"] = jblibs_pkg
 
 samba_module = importlib.import_module("libs.JBLibs.sftp.sambaPoint")
+mounts_module = importlib.import_module("libs.JBLibs.sftp.mounts")
 parser_module = importlib.import_module("libs.JBLibs.sftp.parser")
 user_module = importlib.import_module("libs.JBLibs.sftp.user")
 
@@ -163,6 +164,24 @@ class SambaBatchTransactionTests(unittest.TestCase):
 
 
 class SftpUserCleanupTests(unittest.TestCase):
+    def test_backup_target_cleanup_removes_empty_and_preserves_nonempty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty_target = Path(tmp) / "empty"
+            dirty_target = Path(tmp) / "dirty"
+            empty_target.mkdir()
+            dirty_target.mkdir()
+            stale = dirty_target / "stale.txt"
+            stale.write_text("stale", encoding="utf-8")
+
+            mounts_module.mountpointsManager._cleanupPreservedTargetDirs([
+                str(empty_target),
+                str(dirty_target),
+            ])
+
+            self.assertFalse(empty_target.exists())
+            self.assertTrue(dirty_target.is_dir())
+            self.assertTrue(stale.is_file())
+
     def _fake_user(self, home: str):
         user = object.__new__(user_module.sftpUserMng)
         user.ok = True
