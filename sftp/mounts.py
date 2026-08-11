@@ -55,7 +55,7 @@ class mountpointsManager:
 
         self.ok=True 
     
-    def deleteOneMountpoint(self, mount_point:sftpUserMountpoint)->None:
+    def deleteOneMountpoint(self, mount_point:sftpUserMountpoint, preserveTargetDir:bool=False)->None:
         """Odstraní mountpoint s daným jménem z uživatelova jailu.
         Args:
             mount_point (sftpUserMountpoint): mountpoint k odstranění
@@ -80,6 +80,9 @@ class mountpointsManager:
         if mp_to_delete.isSambaVault():
             try:
                 smb.removeSharePoint(self.username, mp_to_delete)
+                if preserveTargetDir:
+                    while mp_to_delete.mountPath in smb.smbHelp.toRemove:
+                        smb.smbHelp.toRemove.remove(mp_to_delete.mountPath)
             except Exception as e:
                 raise RuntimeError(f"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}") from e
         else:
@@ -94,7 +97,7 @@ class mountpointsManager:
                         time.sleep(2)
                         subprocess.run(["umount", mp_to_delete.mountPath], check=True)
 
-                if mp_to_delete.mountExists():
+                if mp_to_delete.mountExists() and not preserveTargetDir:
                     os.rmdir(mp_to_delete.mountPath)
             except Exception as e:
                 raise RuntimeError(f"Failed to delete mountpoint {mount_point.mountName} for user {self.username}: {e}") from e
@@ -246,7 +249,7 @@ class mountpointsManager:
         except Exception as e:
             raise RuntimeError(f"Failed to save mountpoints for user {self.username}: {e}")    
         
-    def deleteMountpoint(self, mount_name:str|None)->None:
+    def deleteMountpoint(self, mount_name:str|None, preserveTargetDirs:bool=False)->None:
         """Odstraní mountpoint s daným jménem z uživatelova jailu.
         Args:
             mount_name (str|None): jméno mountpointu v jailu, pokud zadáme None, smaže všechny mountpointy
@@ -258,13 +261,13 @@ class mountpointsManager:
         
         if mount_name is None:
             for mp in self.mountpoints[:]:  # kopie seznamu pro bezpečné mazání během iterace
-                self.deleteOneMountpoint(mp)
+                self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)
         else:
             mp=self.getMountpointByName(mount_name)
             if mp is None:
                 raise RuntimeError(f"Mountpoint {mount_name} does not exist for user {self.username}.")
-            self.deleteOneMountpoint(mp)
-            
+            self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)
+
         if not smb.postRemoveAllMountpoints():
             raise RuntimeError("Failed to finalize mountpoint removal changes.")
 

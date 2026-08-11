@@ -14,6 +14,7 @@ from .mounts import mountpointsManager
 from .userCerts import userCertsManager
 from .userGrps import deleteUserFromGroup
 from .ssh import remove_sshd_config
+from ..archive_backup import create_directory_backup
 
 class sftpUserMng:
     """Třída pro správu SFTP uživatele v systému.
@@ -310,7 +311,7 @@ class sftpUserMng:
             log.warning(f"Failed to remove SSH directory {ssh_dir} for user {self.username}: {e}")
             log.exception(e)
 
-    def delete_user(self)->None:
+    def delete_user(self, backupRoot:str|None=None)->None:
         """Odstraní systémového uživatele a jeho domovský adresář.
         Raises:
             RuntimeError: pokud uživatel není správně inicializován nebo dojde k chybě při mazání uživatele
@@ -330,11 +331,40 @@ class sftpUserMng:
                 log.error(f"Cannot delete user {self.username} because some mountpoints are busy.")
                 raise RuntimeError(f"Cannot delete user {self.username} because some mountpoints are busy.")
             
-            # smažeme mountpointy
+            # Odpojíme mountpointy. Při zálohovaném uninstallu zachováme jejich
+            # lokální cílové adresáře i případný nečekaný obsah pro archiv.
             log.info(f"Deleting all mountpoints for user {self.username}.")
-            self.mountpointManager.deleteMountpoint(None)
-            
-            if not self.__delete_jail(queryNoEmpty=True):
+            self.mountpointManager.deleteMountpoint(
+                None,
+                preserveTargetDirs=bool(backupRoot)
+            )
+
+            backup_created = False
+            if backupRoot:
+                if self.__jailHasMountedPaths(self.homeDir):
+                    raise RuntimeError(
+                        f"Cannot back up SFTP user {self.username}: an active mount still exists below {self.homeDir}."
+                    )
+                try:
+                    backup_dir = os.path.join(backupRoot, self.username)
+                    backup = create_directory_backup(
+                        self.homeDir,
+                        backup_dir,
+                        archive_label=self.username,
+                        owner_uid=0,
+                        owner_gid=0,
+                    )
+                    log.info(
+                        f"Created SFTP user backup {backup.path} before deletion "
+                        f"({backup.size_bytes} bytes)."
+                    )
+                    backup_created = True
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to create backup before deleting SFTP user {self.username}: {e}"
+                    ) from e
+
+            if not self.__delete_jail(queryNoEmpty=not backup_created):
                 raise RuntimeError(f"Failed to delete jail for user {self.username}.")
             
             # teď je možné smazat mount list
