@@ -74,6 +74,7 @@ class SambaBatchTransactionTests(unittest.TestCase):
         samba_module.smbHelp.toMount.clear()
         samba_module.smbHelp.toRemove.clear()
         samba_module.smbHelp.toCloseShares.clear()
+        samba_module.smbHelp.lastError = None
 
     def tearDown(self):
         samba_module.smbHelp._batchDepth = 0
@@ -81,6 +82,7 @@ class SambaBatchTransactionTests(unittest.TestCase):
         samba_module.smbHelp.toMount.clear()
         samba_module.smbHelp.toRemove.clear()
         samba_module.smbHelp.toCloseShares.clear()
+        samba_module.smbHelp.lastError = None
 
     def test_post_remove_does_not_cleanup_inside_active_batch(self):
         samba_module.smbHelp._batchDepth = 1
@@ -152,8 +154,21 @@ class SambaBatchTransactionTests(unittest.TestCase):
             target = Path(tmp) / "docs"
             target.mkdir()
             (target / "stale.txt").write_text("stale", encoding="utf-8")
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(samba_module.ManagedCIFSTargetNotEmptyError) as ctx:
                 samba_module.smbHelp.prepareConfiguredMountpointDirectories({str(target)})
+            self.assertEqual(ctx.exception.target, str(target))
+
+    def test_finalize_exposes_concrete_transaction_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "docs"
+            target.mkdir()
+            (target / "stale.txt").write_text("stale", encoding="utf-8")
+            configured = [("//127.0.0.1/sftp_mount_alice_docs", str(target))]
+            samba_module.smbHelp.requireSambaRestart = True
+            with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True):
+                self.assertFalse(samba_module.smbHelp.finalizeMountpointChanges())
+            self.assertIsInstance(samba_module.smbHelp.lastError, samba_module.ManagedCIFSTargetNotEmptyError)
+            self.assertEqual(samba_module.smbHelp.lastError.target, str(target))
 
     def test_close_share_failure_falls_back_to_full_samba_restart(self):
         configured = [("//127.0.0.1/sftp_mount_alice_docs", "/jail/alice/docs")]
