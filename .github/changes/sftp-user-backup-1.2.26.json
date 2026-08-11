@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "commit_message": "Add SFTP pre-delete user backups",
+  "replacements": [
+    {
+      "path": "sftp/mounts.py",
+      "old": "    def deleteOneMountpoint(self, mount_point:sftpUserMountpoint)->None:",
+      "new": "    def deleteOneMountpoint(self, mount_point:sftpUserMountpoint, preserveTargetDir:bool=False)->None:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/mounts.py",
+      "old": "        if mp_to_delete.isSambaVault():\n            try:\n                smb.removeSharePoint(self.username, mp_to_delete)\n            except Exception as e:\n                raise RuntimeError(f\"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}\") from e\n        else:",
+      "new": "        if mp_to_delete.isSambaVault():\n            try:\n                smb.removeSharePoint(self.username, mp_to_delete)\n                if preserveTargetDir:\n                    while mp_to_delete.mountPath in smb.smbHelp.toRemove:\n                        smb.smbHelp.toRemove.remove(mp_to_delete.mountPath)\n            except Exception as e:\n                raise RuntimeError(f\"Failed to delete Samba mountpoint {mount_point.mountName} for user {self.username}: {e}\") from e\n        else:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/mounts.py",
+      "old": "                if mp_to_delete.mountExists():\n                    os.rmdir(mp_to_delete.mountPath)",
+      "new": "                if mp_to_delete.mountExists() and not preserveTargetDir:\n                    os.rmdir(mp_to_delete.mountPath)",
+      "expected": 1
+    },
+    {
+      "path": "sftp/mounts.py",
+      "old": "    def deleteMountpoint(self, mount_name:str|None)->None:",
+      "new": "    def deleteMountpoint(self, mount_name:str|None, preserveTargetDirs:bool=False)->None:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/mounts.py",
+      "old": "                self.deleteOneMountpoint(mp)",
+      "new": "                self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)",
+      "expected": 1
+    },
+    {
+      "path": "sftp/mounts.py",
+      "old": "            self.deleteOneMountpoint(mp)\n            \n        if not smb.postRemoveAllMountpoints():",
+      "new": "            self.deleteOneMountpoint(mp, preserveTargetDir=preserveTargetDirs)\n            \n        if not smb.postRemoveAllMountpoints():",
+      "expected": 1
+    },
+    {
+      "path": "sftp/user.py",
+      "old": "from .ssh import remove_sshd_config",
+      "new": "from .ssh import remove_sshd_config\nfrom ..archive_backup import create_directory_backup",
+      "expected": 1
+    },
+    {
+      "path": "sftp/user.py",
+      "old": "    def delete_user(self)->None:",
+      "new": "    def delete_user(self, backupRoot:str|None=None)->None:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/user.py",
+      "old": "            # smažeme mountpointy\n            log.info(f\"Deleting all mountpoints for user {self.username}.\")\n            self.mountpointManager.deleteMountpoint(None)\n            \n            if not self.__delete_jail(queryNoEmpty=True):\n                raise RuntimeError(f\"Failed to delete jail for user {self.username}.\")",
+      "new": "            # Odpojíme mountpointy. Při zálohovaném uninstallu zachováme jejich\n            # lokální cílové adresáře i případný nečekaný obsah pro archiv.\n            log.info(f\"Deleting all mountpoints for user {self.username}.\")\n            self.mountpointManager.deleteMountpoint(\n                None,\n                preserveTargetDirs=bool(backupRoot)\n            )\n\n            backup_created = False\n            if backupRoot:\n                if self.__jailHasMountedPaths(self.homeDir):\n                    raise RuntimeError(\n                        f\"Cannot back up SFTP user {self.username}: an active mount still exists below {self.homeDir}.\"\n                    )\n                try:\n                    backup_dir = os.path.join(backupRoot, self.username)\n                    backup = create_directory_backup(\n                        self.homeDir,\n                        backup_dir,\n                        archive_label=self.username,\n                        owner_uid=0,\n                        owner_gid=0,\n                    )\n                    log.info(\n                        f\"Created SFTP user backup {backup.path} before deletion \"\n                        f\"({backup.size_bytes} bytes).\"\n                    )\n                    backup_created = True\n                except Exception as e:\n                    raise RuntimeError(\n                        f\"Failed to create backup before deleting SFTP user {self.username}: {e}\"\n                    ) from e\n\n            if not self.__delete_jail(queryNoEmpty=not backup_created):\n                raise RuntimeError(f\"Failed to delete jail for user {self.username}.\")",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "def uninstallUser(username:str|sftpUserMng)->bool:\n",
+      "new": "def uninstallUser(username:str|sftpUserMng, backup_root:Optional[str]=None)->bool:\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "    return __uninstallUser(username)\n\ndef __uninstallUser(username:str|sftpUserMng)->bool:",
+      "new": "    return __uninstallUser(username, backup_root=backup_root)\n\ndef __uninstallUser(username:str|sftpUserMng, backup_root:Optional[str]=None)->bool:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "        u.delete_user()",
+      "new": "        u.delete_user(backupRoot=backup_root)",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "def uninstallUnwantedUsers(cfg:Optional[Dict]=None)->bool:",
+      "new": "def uninstallUnwantedUsers(cfg:Optional[Dict]=None, backup_root:Optional[str]=None)->bool:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "                if not __uninstallUser(u):\n                    success=False",
+      "new": "                if not __uninstallUser(u, backup_root=backup_root):\n                    success=False",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "def uninstallAllUsers()->bool:",
+      "new": "def uninstallAllUsers(backup_root:Optional[str]=None)->bool:",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "        if not __uninstallUser(u):\n            success=False\n\n    return success",
+      "new": "        if not __uninstallUser(u, backup_root=backup_root):\n            success=False\n\n    return success",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.25\"\n\n# 1.2.25:",
+      "new": "__version__ = \"1.2.26\"\n\n# 1.2.26: reusable timestamped directory backups and optional SFTP pre-delete home archival\n# 1.2.25:",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_sftp_rw_reconcile.py",
+      "old": "from unittest.mock import mock_open, patch",
+      "new": "from unittest.mock import MagicMock, mock_open, patch",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_sftp_rw_reconcile.py",
+      "old": "    def test_recursive_jail_cleanup_refuses_active_mounts(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            jail = Path(tmp) / \"__sftp__\"\n            stale_dir = jail / \"docs\"\n            stale_dir.mkdir(parents=True)\n            (stale_dir / \"stale.txt\").write_text(\"stale\", encoding=\"utf-8\")\n            user = self._fake_user(tmp)\n            with patch.object(user_module.ssh, \"ensureJail\", return_value=str(jail)), patch.object(user_module, \"confirm\", return_value=True), patch.object(user, \"_sftpUserMng__jailHasMountedPaths\", return_value=True):\n                self.assertFalse(user._sftpUserMng__delete_jail(queryNoEmpty=True))\n            self.assertTrue(jail.exists())\n            self.assertTrue((stale_dir / \"stale.txt\").exists())\n\n\nclass ParserRwReconcileTests",
+      "new": "    def test_recursive_jail_cleanup_refuses_active_mounts(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            jail = Path(tmp) / \"__sftp__\"\n            stale_dir = jail / \"docs\"\n            stale_dir.mkdir(parents=True)\n            (stale_dir / \"stale.txt\").write_text(\"stale\", encoding=\"utf-8\")\n            user = self._fake_user(tmp)\n            with patch.object(user_module.ssh, \"ensureJail\", return_value=str(jail)), patch.object(user_module, \"confirm\", return_value=True), patch.object(user, \"_sftpUserMng__jailHasMountedPaths\", return_value=True):\n                self.assertFalse(user._sftpUserMng__delete_jail(queryNoEmpty=True))\n            self.assertTrue(jail.exists())\n            self.assertTrue((stale_dir / \"stale.txt\").exists())\n\n    def test_delete_user_backups_full_home_after_mount_detach(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            home = Path(tmp) / \"alice\"\n            jail = home / \"__sftp__\"\n            jail.mkdir(parents=True)\n            (jail / \"stale.txt\").write_text(\"stale\", encoding=\"utf-8\")\n            user = self._fake_user(str(home))\n            user.mountpointManager = MagicMock()\n            user.mountpointManager.umount_will_be_ok.return_value = True\n            user.certificateManager = MagicMock()\n            user.certificateManager.certificates = []\n            events = []\n\n            def backup_side_effect(source, destination, **kwargs):\n                events.append(\"backup\")\n                self.assertEqual(source, str(home))\n                self.assertEqual(destination, \"/var/backups/sftpusers/alice\")\n                return types.SimpleNamespace(path=\"/var/backups/sftpusers/alice/test.7z\", size_bytes=123)\n\n            def jail_side_effect(queryNoEmpty=True):\n                events.append(\"jail\")\n                self.assertFalse(queryNoEmpty)\n                return True\n\n            with patch.object(user, \"_sftpUserMng__killUserProcesses\"), patch.object(\n                user, \"_sftpUserMng__jailHasMountedPaths\", return_value=False\n            ) as mount_guard, patch.object(\n                user_module, \"create_directory_backup\", side_effect=backup_side_effect\n            ), patch.object(\n                user, \"_sftpUserMng__delete_jail\", side_effect=jail_side_effect\n            ), patch.object(\n                user, \"_sftpUserMng__cleanupSSHFiles\"\n            ), patch.object(\n                user_module, \"remove_sshd_config\"\n            ), patch.object(\n                user_module, \"deleteUserFromGroup\"\n            ), patch.object(\n                user_module.pwd, \"getpwnam\", return_value=types.SimpleNamespace(pw_uid=1000, pw_gid=1000)\n            ), patch.object(\n                user_module.os, \"chown\"\n            ), patch.object(\n                user_module.os, \"chmod\"\n            ), patch.object(\n                user_module.os, \"rmdir\"\n            ), patch.object(\n                user_module.subprocess, \"run\", return_value=types.SimpleNamespace(returncode=0)\n            ):\n                user.delete_user(backupRoot=\"/var/backups/sftpusers\")\n\n            user.mountpointManager.deleteMountpoint.assert_called_once_with(\n                None, preserveTargetDirs=True\n            )\n            mount_guard.assert_called_once_with(str(home))\n            self.assertEqual(events, [\"backup\", \"jail\"])\n\n\nclass ParserRwReconcileTests",
+      "expected": 1
+    }
+  ]
+}
