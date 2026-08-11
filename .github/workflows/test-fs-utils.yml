@@ -51,5 +51,5 @@ jobs:
 
           init = Path("__init__.py").read_text(encoding="utf-8")
           version = re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE).group(1)
-          assert version == "1.2.27"
+          assert version == "1.2.28"
           PY
