@@ -63,8 +63,16 @@ class CMenuRenderTests(unittest.TestCase):
     def test_run_refresh_flushes_render_before_input_wait(self):
         menu = c_menu_module.c_menu(menu=[], quitEnable=False)
         fake_stdout = Mock()
+        fake_input = types.ModuleType(f"{PACKAGE_NAME}.input")
+        fake_input.setMinMessageWidth = Mock()
 
-        with patch.object(c_menu_module.sys, "stdout", fake_stdout):
+        with (
+            patch.dict(
+                sys.modules,
+                {f"{PACKAGE_NAME}.input": fake_input},
+            ),
+            patch.object(c_menu_module.sys, "stdout", fake_stdout),
+        ):
             menu.run_refresh("")
 
         fake_stdout.write.assert_called()
