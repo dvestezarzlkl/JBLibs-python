@@ -4,16 +4,20 @@ on:
   pull_request:
     paths:
       - "sftp/**"
+      - "archive_backup.py"
       - "__init__.py"
       - "tests/test_sftp_rw_reconcile.py"
+      - "tests/test_archive_backup.py"
       - ".github/workflows/test-sftp-rw-reconcile.yml"
   push:
     branches:
       - main
     paths:
       - "sftp/**"
+      - "archive_backup.py"
       - "__init__.py"
       - "tests/test_sftp_rw_reconcile.py"
+      - "tests/test_archive_backup.py"
       - ".github/workflows/test-sftp-rw-reconcile.yml"
 
 permissions:
@@ -37,8 +41,8 @@ jobs:
           ln -s "$GITHUB_WORKSPACE" /tmp/jblibs-test/libs/JBLibs
           mkdir -p log
       - name: Compile
-        run: PYTHONPATH=/tmp/jblibs-test python -m py_compile sftp/parser.py sftp/sambaPoint.py tests/test_sftp_rw_reconcile.py
+        run: PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py
       - name: Run tests
-        run: PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_sftp_rw_reconcile
+        run: PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile
       - name: Verify version
-        run: python -c 'import re,pathlib; v=re.search(r"^__version__ = \"([^\"]+)\"", pathlib.Path("__init__.py").read_text(), re.M).group(1); assert v == "1.2.25"'
+        run: python -c 'import re,pathlib; v=re.search(r"^__version__ = \"([^\"]+)\"", pathlib.Path("__init__.py").read_text(), re.M).group(1); assert v == "1.2.26"'
