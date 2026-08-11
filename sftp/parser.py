@@ -463,16 +463,16 @@ def createJson(overwrite:bool=False)->bool:
     
     return True
 
-def uninstallUser(username:str|sftpUserMng)->bool:
+def uninstallUser(username:str|sftpUserMng, backup_root:Optional[str]=None)->bool:
     """Odinstaluje zadaného sftpUserMng uživatele ze systému.
     Args:
         username (str): jméno uživatele k odinstalaci
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
     """
-    return __uninstallUser(username)
+    return __uninstallUser(username, backup_root=backup_root)
 
-def __uninstallUser(username:str|sftpUserMng)->bool:
+def __uninstallUser(username:str|sftpUserMng, backup_root:Optional[str]=None)->bool:
     """Odinstaluje zadaného sftpUserMng uživatele ze systému.
     Args:
         username (str): jméno uživatele k odinstalaci
@@ -488,7 +488,7 @@ def __uninstallUser(username:str|sftpUserMng)->bool:
         if not u.ok:
             log.error(f"User {username} is not a valid SFTP user.")
             return False
-        u.delete_user()
+        u.delete_user(backupRoot=backup_root)
         log.info(f"Successfully uninstalled SFTP user {username}.")
         return True
     except Exception as e:
@@ -497,7 +497,7 @@ def __uninstallUser(username:str|sftpUserMng)->bool:
         return False    
     
 
-def uninstallUnwantedUsers(cfg:Optional[Dict]=None)->bool:
+def uninstallUnwantedUsers(cfg:Optional[Dict]=None, backup_root:Optional[str]=None)->bool:
     """Odinstaluje všechny sftpUserMng uživatele, kteří nejsou v požadované konfiguraci.
     Pokud cfg není předáno, zachovává kompatibilní chování a načte defaultní JSON soubor.
     Returns:
@@ -541,7 +541,7 @@ def uninstallUnwantedUsers(cfg:Optional[Dict]=None)->bool:
         for u in active_users:
             if u.username not in users_in_json:
                 log.info(f"User {u.username} is not in JSON file, uninstalling.")
-                if not __uninstallUser(u):
+                if not __uninstallUser(u, backup_root=backup_root):
                     success=False
             else:
                 log.info(f"User {u.username} is in JSON file, keeping installed.")
@@ -594,7 +594,7 @@ def check_config_valid(cfg: Dict) -> Tuple[bool, Optional[str]]:
                 return False, TXT_SFTP_PARSER_INVALID_USER_MAIL.format(username=username)
     return True, None
 
-def uninstallAllUsers()->bool:
+def uninstallAllUsers(backup_root:Optional[str]=None)->bool:
     """Odinstaluje všechny sftpUserMng uživatele ze systému.
     Returns:
         bool: True pokud se odinstalace podařila, jinak False
@@ -612,7 +612,7 @@ def uninstallAllUsers()->bool:
     
     success=True
     for u in users:
-        if not __uninstallUser(u):
+        if not __uninstallUser(u, backup_root=backup_root):
             success=False
 
     return success

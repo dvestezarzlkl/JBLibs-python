@@ -7,7 +7,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import mock_open, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -210,6 +210,61 @@ class SftpUserCleanupTests(unittest.TestCase):
                 self.assertFalse(user._sftpUserMng__delete_jail(queryNoEmpty=True))
             self.assertTrue(jail.exists())
             self.assertTrue((stale_dir / "stale.txt").exists())
+
+    def test_delete_user_backups_full_home_after_mount_detach(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "alice"
+            jail = home / "__sftp__"
+            jail.mkdir(parents=True)
+            (jail / "stale.txt").write_text("stale", encoding="utf-8")
+            user = self._fake_user(str(home))
+            user.mountpointManager = MagicMock()
+            user.mountpointManager.umount_will_be_ok.return_value = True
+            user.certificateManager = MagicMock()
+            user.certificateManager.certificates = []
+            events = []
+
+            def backup_side_effect(source, destination, **kwargs):
+                events.append("backup")
+                self.assertEqual(source, str(home))
+                self.assertEqual(destination, "/var/backups/sftpusers/alice")
+                return types.SimpleNamespace(path="/var/backups/sftpusers/alice/test.7z", size_bytes=123)
+
+            def jail_side_effect(queryNoEmpty=True):
+                events.append("jail")
+                self.assertFalse(queryNoEmpty)
+                return True
+
+            with patch.object(user, "_sftpUserMng__killUserProcesses"), patch.object(
+                user, "_sftpUserMng__jailHasMountedPaths", return_value=False
+            ) as mount_guard, patch.object(
+                user_module, "create_directory_backup", side_effect=backup_side_effect
+            ), patch.object(
+                user, "_sftpUserMng__delete_jail", side_effect=jail_side_effect
+            ), patch.object(
+                user, "_sftpUserMng__cleanupSSHFiles"
+            ), patch.object(
+                user_module, "remove_sshd_config"
+            ), patch.object(
+                user_module, "deleteUserFromGroup"
+            ), patch.object(
+                user_module.pwd, "getpwnam", return_value=types.SimpleNamespace(pw_uid=1000, pw_gid=1000)
+            ), patch.object(
+                user_module.os, "chown"
+            ), patch.object(
+                user_module.os, "chmod"
+            ), patch.object(
+                user_module.os, "rmdir"
+            ), patch.object(
+                user_module.subprocess, "run", return_value=types.SimpleNamespace(returncode=0)
+            ):
+                user.delete_user(backupRoot="/var/backups/sftpusers")
+
+            user.mountpointManager.deleteMountpoint.assert_called_once_with(
+                None, preserveTargetDirs=True
+            )
+            mount_guard.assert_called_once_with(str(home))
+            self.assertEqual(events, ["backup", "jail"])
 
 
 class ParserRwReconcileTests(unittest.TestCase):
