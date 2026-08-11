@@ -1468,7 +1468,11 @@ class c_menu:
         sys.stdout.write(
             f"\033[H{o}\033[J"
         )
-        
+        # Ensure the fully rendered frame reaches TTY/PTY frontends before
+        # getKey() enters its blocking read. Some wrappers do not line-buffer
+        # ANSI cursor-control output reliably.
+        sys.stdout.flush()
+
         return ok
 
     menuRecycle:bool=False
