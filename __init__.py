@@ -1,5 +1,6 @@
-__version__ = "1.2.24"
+__version__ = "1.2.25"
 
+# 1.2.25: recursive SFTP jail cleanup detects bind mounts via mountinfo and fails closed
 # 1.2.24: managed Samba shares refresh live access connections and SFTP cleanup refuses hidden mounted data
 # 1.2.23: Samba/CIFS batch defers physical cleanup, preserves recreated targets, and uses correct SFTP share identity
 # 1.2.22: SFTP reconciliation accepts in-memory config and exposes concrete per-user apply errors

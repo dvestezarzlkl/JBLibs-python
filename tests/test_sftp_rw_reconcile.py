@@ -7,7 +7,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -180,6 +180,24 @@ class SftpUserCleanupTests(unittest.TestCase):
             with patch.object(user_module.ssh, "ensureJail", return_value=str(jail)), patch.object(user_module, "confirm", return_value=True), patch.object(user, "_sftpUserMng__jailHasMountedPaths", return_value=False):
                 self.assertTrue(user._sftpUserMng__delete_jail(queryNoEmpty=True))
             self.assertFalse(jail.exists())
+
+    def test_jail_mount_guard_detects_bind_mount_from_mountinfo(self):
+        user = self._fake_user("/home_sftp_users/alice")
+        mountinfo = (
+            "36 25 0:32 / / rw,relatime - ext4 /dev/root rw\n"
+            "48 36 0:32 /srv/docs /home_sftp_users/alice/__sftp__/docs rw,relatime - ext4 /dev/root rw\n"
+        )
+        with patch("builtins.open", mock_open(read_data=mountinfo)):
+            self.assertTrue(
+                user._sftpUserMng__jailHasMountedPaths("/home_sftp_users/alice/__sftp__")
+            )
+
+    def test_jail_mount_guard_fails_closed_when_mountinfo_unreadable(self):
+        user = self._fake_user("/home_sftp_users/alice")
+        with patch("builtins.open", side_effect=OSError("mountinfo unavailable")):
+            self.assertTrue(
+                user._sftpUserMng__jailHasMountedPaths("/home_sftp_users/alice/__sftp__")
+            )
 
     def test_recursive_jail_cleanup_refuses_active_mounts(self):
         with tempfile.TemporaryDirectory() as tmp:
