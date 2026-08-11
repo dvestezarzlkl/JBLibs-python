@@ -617,8 +617,8 @@ class smbHelp:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
-            except FileNotFoundError:
-                log.warning("smbcontrol is not available; a Samba restart is required to refresh managed share connections.")
+            except OSError as e:
+                log.warning(f"smbcontrol could not be executed ({e}); a Samba restart is required to refresh managed share connections.")
                 return False
             if proc.returncode != 0:
                 stderr = proc.stderr.decode().strip() if proc.stderr else f"return code {proc.returncode}"

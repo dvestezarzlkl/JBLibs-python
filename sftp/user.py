@@ -220,13 +220,33 @@ class sftpUserMng:
             raise RuntimeError(f"Some processes of {self.username} are still running.")
 
     def __jailHasMountedPaths(self, jailPath:str)->bool:
-        """Return True if the jail itself or any descendant is still a mountpoint."""
-        if os.path.ismount(jailPath):
+        """Return True if the jail itself or any descendant is a live mount.
+
+        `/proc/self/mountinfo` is used instead of `os.path.ismount()` because the
+        latter cannot reliably identify every bind mount on the same filesystem.
+        Failure to inspect mountinfo is treated as unsafe and therefore mounted.
+        """
+        jail = os.path.normpath(os.path.abspath(jailPath))
+        prefix = jail.rstrip(os.sep) + os.sep
+        try:
+            with open("/proc/self/mountinfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 5:
+                        continue
+                    mount_path = (
+                        parts[4]
+                        .replace(r"\040", " ")
+                        .replace(r"\011", "\t")
+                        .replace(r"\012", "\n")
+                        .replace(r"\134", "\\")
+                    )
+                    mount_path = os.path.normpath(os.path.abspath(mount_path))
+                    if mount_path == jail or mount_path.startswith(prefix):
+                        return True
+        except Exception as e:
+            log.error(f"Cannot safely inspect active mounts below jail {jail}: {e}")
             return True
-        for root, dirs, _ in os.walk(jailPath):
-            for name in dirs:
-                if os.path.ismount(os.path.join(root, name)):
-                    return True
         return False
 
     def __delete_jail(self, queryNoEmpty:bool=True)->bool:
