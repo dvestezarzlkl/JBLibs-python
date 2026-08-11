@@ -37,18 +37,6 @@
       "old": "__version__ = \"1.2.26\"\n\n# 1.2.26:",
       "new": "__version__ = \"1.2.27\"\n\n# 1.2.27: pre-delete SFTP backup drops empty detached mount targets and preserves only targets containing underlying data\n# 1.2.26:",
       "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "assert v == \"1.2.26\"",
-      "new": "assert v == \"1.2.27\"",
-      "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-fs-utils.yml",
-      "old": "assert version == \"1.2.26\"",
-      "new": "assert version == \"1.2.27\"",
-      "expected": 1
     }
   ]
 }
