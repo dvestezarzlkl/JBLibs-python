@@ -22,6 +22,15 @@ __INIT_DONE__=False
 __INIT_LOCK__=threading.Lock()
 """Zámek pro inicializaci."""
 
+class ManagedCIFSTargetNotEmptyError(RuntimeError):
+    """Managed CIFS target contains unexpected local data while unmounted."""
+    def __init__(self, target:str):
+        self.target = target
+        super().__init__(
+            f"Managed CIFS target {target} is not empty while unmounted; "
+            "refusing to hide underlying data beneath the mount."
+        )
+
 class smbHelp:    
     toMount:list[str] = []
     requireSambaRestart:bool = False
@@ -31,6 +40,8 @@ class smbHelp:
     """Managed Samba shares whose established service connections must be closed after config reload."""
     _batchDepth:int = 0
     """Hloubka vnořené dávky změn; post-processing proběhne až při návratu na nulu."""
+    lastError:Exception|None = None
+    """Poslední konkrétní chyba nejvyšší Samba/CIFS batch transakce."""
 
     @staticmethod
     def ensureSambaCredFile():
@@ -500,6 +511,8 @@ class smbHelp:
     @staticmethod
     def beginBatch()->None:
         """Zahájí (případně vnoří) dávku Samba/CIFS změn."""
+        if smbHelp._batchDepth == 0:
+            smbHelp.lastError = None
         smbHelp._batchDepth += 1
         log.debug(f"Samba/CIFS change batch depth increased to {smbHelp._batchDepth}.")
 
@@ -640,10 +653,7 @@ class smbHelp:
             if not os.path.isdir(target):
                 raise RuntimeError(f"Managed CIFS target is not a directory: {target}")
             if os.listdir(target):
-                raise RuntimeError(
-                    f"Managed CIFS target {target} is not empty while unmounted; "
-                    "refusing to hide underlying data beneath the mount."
-                )
+                raise ManagedCIFSTargetNotEmptyError(target)
             try:
                 os.chown(target, 0, 0)
                 os.chmod(target, 0o555)
@@ -684,6 +694,7 @@ class smbHelp:
         spravované loopback CIFS mounty, načte novou Samba konfiguraci,
         provede jediný daemon-reload a připojí výsledný stav z /etc/fstab.
         """
+        smbHelp.lastError = None
         pending = smbHelp.requireSambaRestart or bool(smbHelp.toMount) or bool(smbHelp.toRemove)
         if not pending:
             log.info("Samba/CIFS post-processing: no pending changes.")
@@ -715,6 +726,7 @@ class smbHelp:
             log.info("Samba/CIFS mountpoint transaction completed successfully.")
             return True
         except Exception as e:
+            smbHelp.lastError = e
             log.error(f"Samba/CIFS mountpoint transaction failed: {e}")
             log.exception(e)
             return False
