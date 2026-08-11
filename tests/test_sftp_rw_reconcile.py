@@ -25,6 +25,7 @@ if "libs.JBLibs" not in sys.modules:
 
 samba_module = importlib.import_module("libs.JBLibs.sftp.sambaPoint")
 parser_module = importlib.import_module("libs.JBLibs.sftp.parser")
+user_module = importlib.import_module("libs.JBLibs.sftp.user")
 
 
 class SambaReadOnlyStateTests(unittest.TestCase):
@@ -71,12 +72,14 @@ class SambaBatchTransactionTests(unittest.TestCase):
         samba_module.smbHelp.requireSambaRestart = False
         samba_module.smbHelp.toMount.clear()
         samba_module.smbHelp.toRemove.clear()
+        samba_module.smbHelp.toCloseShares.clear()
 
     def tearDown(self):
         samba_module.smbHelp._batchDepth = 0
         samba_module.smbHelp.requireSambaRestart = False
         samba_module.smbHelp.toMount.clear()
         samba_module.smbHelp.toRemove.clear()
+        samba_module.smbHelp.toCloseShares.clear()
 
     def test_post_remove_does_not_cleanup_inside_active_batch(self):
         samba_module.smbHelp._batchDepth = 1
@@ -95,9 +98,9 @@ class SambaBatchTransactionTests(unittest.TestCase):
         def cleanup(preserve):
             events.append(("cleanup", set(preserve)))
             return True
-        with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS", side_effect=lambda: events.append(("unmount", None))), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", side_effect=cleanup), patch.object(samba_module, "reloadSambaService", side_effect=lambda: events.append(("samba", None)) or True), patch.object(samba_module.smbHelp, "reloadSystemdDaemon", side_effect=lambda: events.append(("systemd", None)) or True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS", side_effect=lambda mounts: events.append(("mount", mounts))):
+        with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS", side_effect=lambda: events.append(("unmount", None))), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", side_effect=cleanup), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories", side_effect=lambda targets: events.append(("prepare", set(targets)))), patch.object(samba_module, "reloadSambaService", side_effect=lambda: events.append(("samba", None)) or True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", side_effect=lambda: events.append(("close", None)) or True), patch.object(samba_module.smbHelp, "reloadSystemdDaemon", side_effect=lambda: events.append(("systemd", None)) or True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS", side_effect=lambda mounts: events.append(("mount", mounts))):
             self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())
-        self.assertEqual(events, [("unmount", None), ("cleanup", {"/jail/alice/docs"}), ("samba", None), ("systemd", None), ("mount", configured)])
+        self.assertEqual(events, [("unmount", None), ("cleanup", {"/jail/alice/docs"}), ("prepare", {"/jail/alice/docs"}), ("samba", None), ("close", None), ("systemd", None), ("mount", configured)])
 
     def test_remove_queue_keeps_target_recreated_in_same_batch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -130,6 +133,65 @@ class SambaBatchTransactionTests(unittest.TestCase):
             with patch.object(mp, "forUser", return_value=("source-owner", 1000)), patch.object(mp, "forGroup", return_value=("source-group", 1000)), patch.object(samba_module, "initEnsureSamba"), patch.object(samba_module.os, "chown"), patch.object(samba_module.os, "chmod"), patch.object(samba_module.smbHelp, "ensureSambaSharePoint"), patch.object(samba_module.smbHelp, "ensureFstabCIFScfg", return_value=True), patch.object(samba_module.smbHelp, "isMounted", return_value=True) as is_mounted:
                 samba_module.ensureMountpoint("alice", mp)
             is_mounted.assert_called_once_with("docs", "alice")
+
+
+    def test_changed_share_is_closed_by_name_and_not_globally(self):
+        samba_module.smbHelp.toCloseShares.add("sftp_mount_alice_docs")
+        proc = types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+        with patch.object(samba_module.subprocess, "run", return_value=proc) as run:
+            self.assertTrue(samba_module.smbHelp.closeQueuedSambaShares())
+        run.assert_called_once_with(
+            ["smbcontrol", "smbd", "close-share", "sftp_mount_alice_docs"],
+            stdout=samba_module.subprocess.PIPE,
+            stderr=samba_module.subprocess.PIPE,
+        )
+
+    def test_nonempty_unmounted_target_is_never_hidden_by_remount(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "docs"
+            target.mkdir()
+            (target / "stale.txt").write_text("stale", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                samba_module.smbHelp.prepareConfiguredMountpointDirectories({str(target)})
+
+    def test_close_share_failure_falls_back_to_full_samba_restart(self):
+        configured = [("//127.0.0.1/sftp_mount_alice_docs", "/jail/alice/docs")]
+        samba_module.smbHelp.requireSambaRestart = True
+        with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories"), patch.object(samba_module, "reloadSambaService", return_value=True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", return_value=False), patch.object(samba_module, "restartSambaService", return_value=True) as restart, patch.object(samba_module.smbHelp, "reloadSystemdDaemon", return_value=True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS"):
+            self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())
+        restart.assert_called_once_with()
+
+
+class SftpUserCleanupTests(unittest.TestCase):
+    def _fake_user(self, home: str):
+        user = object.__new__(user_module.sftpUserMng)
+        user.ok = True
+        user.username = "alice"
+        user.homeDir = home
+        return user
+
+    def test_confirmed_nonempty_jail_is_removed_recursively(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            jail = Path(tmp) / "__sftp__"
+            stale_dir = jail / "docs"
+            stale_dir.mkdir(parents=True)
+            (stale_dir / "stale.txt").write_text("stale", encoding="utf-8")
+            user = self._fake_user(tmp)
+            with patch.object(user_module.ssh, "ensureJail", return_value=str(jail)), patch.object(user_module, "confirm", return_value=True), patch.object(user, "_sftpUserMng__jailHasMountedPaths", return_value=False):
+                self.assertTrue(user._sftpUserMng__delete_jail(queryNoEmpty=True))
+            self.assertFalse(jail.exists())
+
+    def test_recursive_jail_cleanup_refuses_active_mounts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            jail = Path(tmp) / "__sftp__"
+            stale_dir = jail / "docs"
+            stale_dir.mkdir(parents=True)
+            (stale_dir / "stale.txt").write_text("stale", encoding="utf-8")
+            user = self._fake_user(tmp)
+            with patch.object(user_module.ssh, "ensureJail", return_value=str(jail)), patch.object(user_module, "confirm", return_value=True), patch.object(user, "_sftpUserMng__jailHasMountedPaths", return_value=True):
+                self.assertFalse(user._sftpUserMng__delete_jail(queryNoEmpty=True))
+            self.assertTrue(jail.exists())
+            self.assertTrue((stale_dir / "stale.txt").exists())
 
 
 class ParserRwReconcileTests(unittest.TestCase):

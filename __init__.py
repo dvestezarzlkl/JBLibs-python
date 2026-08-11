@@ -1,5 +1,6 @@
-__version__ = "1.2.23"
+__version__ = "1.2.24"
 
+# 1.2.24: managed Samba shares refresh live access connections and SFTP cleanup refuses hidden mounted data
 # 1.2.23: Samba/CIFS batch defers physical cleanup, preserves recreated targets, and uses correct SFTP share identity
 # 1.2.22: SFTP reconciliation accepts in-memory config and exposes concrete per-user apply errors
 # 1.2.21: c_menu consistently honors onExitMenu=False for ESC, endMenu, and registered-key exit paths
