@@ -21,6 +21,7 @@ from .user import sftpUserMng
 from . import ssh
 from .glob import SAFE_NAME_RGX, BASE_DIR
 from . import sambaPoint as smb
+from .mountpoint_templates import effective_mountpoint_records, resolve_mountpoint_records
 from typing import Dict,Optional,Tuple
 
 _DEFAULT_CONFIG_ETC_DIR_ = "jb_sftpmanager"
@@ -170,6 +171,22 @@ def createUserFromJson(file:str=None, cfg:Optional[Dict]=None, errors_out:Option
                     log.error(f"Invalid 'sambaVault' property for user {username}: must be a boolean.")
                     continue
             
+            mount_records, mount_errors = resolve_mountpoint_records(d, data)
+            if mount_errors:
+                for mount_error in mount_errors:
+                    msg = f"Invalid mountpoint configuration for user {username}: {mount_error}"
+                    log.error(msg)
+                    if errors_out is not None:
+                        errors_out.append(msg)
+                continue
+
+            effective_records = effective_mountpoint_records(mount_records)
+            desired_mounts = {record.label: record.path for record in effective_records}
+            mpSet = mountpointsPerms({
+                record.label: {"my": record.my, "rw": record.rw}
+                for record in effective_records
+            })
+
             if sftpUserMng.user_exists(username):
                 log.info(f"User {username} already exists, skipping creation.")
                 u=sftpUserMng(username)
@@ -181,18 +198,7 @@ def createUserFromJson(file:str=None, cfg:Optional[Dict]=None, errors_out:Option
                     log.error(msg)
                     if errors_out is not None:
                         errors_out.append(msg)
-                    continue                    
-            
-            # načteme nastavení mountpointů
-            mpSet=mountpointsPerms({})
-            if "pointsSet" in data and isinstance(data["pointsSet"], dict):
-                log.info(f" - Found mountpoint permissions for user {username}.")
-                mpSet=mountpointsPerms(data["pointsSet"])
-
-            desired_mounts = data.get("sftpmounts", {})
-            if not isinstance(desired_mounts, dict):
-                log.error(f"Invalid 'sftpmounts' property for user {username}: must be an object.")
-                continue
+                    continue
 
             for existing_mount in u.mountpointManager.getMountpoints():
                 desired_path = desired_mounts.get(existing_mount.mountName)

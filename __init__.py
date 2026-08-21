@@ -1,5 +1,6 @@
-__version__ = "1.2.29"
+__version__ = "1.2.30"
 
+# 1.2.30: SFTP resolves managed mountpoint templates and disabled per-user mountpoints before Apply
 # 1.2.29: c_menu flushes each rendered ANSI frame before blocking for keyboard input
 # 1.2.28: Samba/CIFS batch failures expose their concrete exception; non-empty managed targets use a typed error with target path
 # 1.2.27: pre-delete SFTP backup drops empty detached mount targets and preserves only targets containing underlying data
