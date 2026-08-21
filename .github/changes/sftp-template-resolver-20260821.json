@@ -19,30 +19,6 @@
       "old": "__version__ = \"1.2.29\"\n\n# 1.2.29: c_menu flushes each rendered ANSI frame before blocking for keyboard input",
       "new": "__version__ = \"1.2.30\"\n\n# 1.2.30: SFTP resolves managed mountpoint templates and disabled per-user mountpoints before Apply\n# 1.2.29: c_menu flushes each rendered ANSI frame before blocking for keyboard input",
       "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "      - \"tests/test_sftp_rw_reconcile.py\"\n      - \"tests/test_archive_backup.py\"",
-      "new": "      - \"tests/test_sftp_rw_reconcile.py\"\n      - \"tests/test_sftp_template_mounts.py\"\n      - \"tests/test_archive_backup.py\"",
-      "expected": 2
-    },
-    {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py",
-      "new": "PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mountpoint_templates.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py tests/test_sftp_template_mounts.py",
-      "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile",
-      "new": "PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile tests.test_sftp_template_mounts",
-      "expected": 1
-    },
-    {
-      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "assert v == \"1.2.29\"",
-      "new": "assert v == \"1.2.30\"",
-      "expected": 1
     }
   ]
 }
