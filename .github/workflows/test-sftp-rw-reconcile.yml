@@ -7,6 +7,7 @@ on:
       - "archive_backup.py"
       - "__init__.py"
       - "tests/test_sftp_rw_reconcile.py"
+      - "tests/test_sftp_template_mounts.py"
       - "tests/test_archive_backup.py"
       - ".github/workflows/test-sftp-rw-reconcile.yml"
   push:
@@ -17,6 +18,7 @@ on:
       - "archive_backup.py"
       - "__init__.py"
       - "tests/test_sftp_rw_reconcile.py"
+      - "tests/test_sftp_template_mounts.py"
       - "tests/test_archive_backup.py"
       - ".github/workflows/test-sftp-rw-reconcile.yml"
 
@@ -41,8 +43,8 @@ jobs:
           ln -s "$GITHUB_WORKSPACE" /tmp/jblibs-test/libs/JBLibs
           mkdir -p log
       - name: Compile
-        run: PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py
+        run: PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mountpoint_templates.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py tests/test_sftp_template_mounts.py
       - name: Run tests
-        run: PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile
+        run: PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile tests.test_sftp_template_mounts
       - name: Verify version
-        run: python -c 'import re,pathlib; v=re.search(r"^__version__ = \"([^\"]+)\"", pathlib.Path("__init__.py").read_text(), re.M).group(1); assert v == "1.2.29"'
+        run: python -c 'import re,pathlib; v=re.search(r"^__version__ = \"([^\"]+)\"", pathlib.Path("__init__.py").read_text(), re.M).group(1); assert v == "1.2.30"'
