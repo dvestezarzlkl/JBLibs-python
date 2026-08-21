@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "commit_message": "SFTP: resolve template and disabled mountpoints",
+  "replacements": [
+    {
+      "path": "sftp/parser.py",
+      "old": "from . import sambaPoint as smb\nfrom typing import Dict,Optional,Tuple",
+      "new": "from . import sambaPoint as smb\nfrom .mountpoint_templates import effective_mountpoint_records, resolve_mountpoint_records\nfrom typing import Dict,Optional,Tuple",
+      "expected": 1
+    },
+    {
+      "path": "sftp/parser.py",
+      "old": "            if sftpUserMng.user_exists(username):\n                log.info(f\"User {username} already exists, skipping creation.\")\n                u=sftpUserMng(username)\n            else:\n                # vytvoříme uživatele\n                u=sftpUserMng.create_user(username)\n                if u is None or not u.ok:\n                    msg = f\"Failed to create user {username}.\"\n                    log.error(msg)\n                    if errors_out is not None:\n                        errors_out.append(msg)\n                    continue                    \n            \n            # načteme nastavení mountpointů\n            mpSet=mountpointsPerms({})\n            if \"pointsSet\" in data and isinstance(data[\"pointsSet\"], dict):\n                log.info(f\" - Found mountpoint permissions for user {username}.\")\n                mpSet=mountpointsPerms(data[\"pointsSet\"])\n\n            desired_mounts = data.get(\"sftpmounts\", {})\n            if not isinstance(desired_mounts, dict):\n                log.error(f\"Invalid 'sftpmounts' property for user {username}: must be an object.\")\n                continue\n",
+      "new": "            mount_records, mount_errors = resolve_mountpoint_records(d, data)\n            if mount_errors:\n                for mount_error in mount_errors:\n                    msg = f\"Invalid mountpoint configuration for user {username}: {mount_error}\"\n                    log.error(msg)\n                    if errors_out is not None:\n                        errors_out.append(msg)\n                continue\n\n            effective_records = effective_mountpoint_records(mount_records)\n            desired_mounts = {record.label: record.path for record in effective_records}\n            mpSet = mountpointsPerms({\n                record.label: {\"my\": record.my, \"rw\": record.rw}\n                for record in effective_records\n            })\n\n            if sftpUserMng.user_exists(username):\n                log.info(f\"User {username} already exists, skipping creation.\")\n                u=sftpUserMng(username)\n            else:\n                # vytvoříme uživatele\n                u=sftpUserMng.create_user(username)\n                if u is None or not u.ok:\n                    msg = f\"Failed to create user {username}.\"\n                    log.error(msg)\n                    if errors_out is not None:\n                        errors_out.append(msg)\n                    continue                    \n",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.29\"\n\n# 1.2.29: c_menu flushes each rendered ANSI frame before blocking for keyboard input",
+      "new": "__version__ = \"1.2.30\"\n\n# 1.2.30: SFTP resolves managed mountpoint templates and disabled per-user mountpoints before Apply\n# 1.2.29: c_menu flushes each rendered ANSI frame before blocking for keyboard input",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "      - \"tests/test_sftp_rw_reconcile.py\"\n      - \"tests/test_archive_backup.py\"",
+      "new": "      - \"tests/test_sftp_rw_reconcile.py\"\n      - \"tests/test_sftp_template_mounts.py\"\n      - \"tests/test_archive_backup.py\"",
+      "expected": 2
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py",
+      "new": "PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mountpoint_templates.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py tests/test_sftp_template_mounts.py",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile",
+      "new": "PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile tests.test_sftp_template_mounts",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "assert v == \"1.2.29\"",
+      "new": "assert v == \"1.2.30\"",
+      "expected": 1
+    }
+  ]
+}
