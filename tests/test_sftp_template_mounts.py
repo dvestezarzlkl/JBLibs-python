@@ -104,6 +104,61 @@ class MountpointTemplateResolverTests(unittest.TestCase):
         self.assertEqual(records, [])
         self.assertEqual(errors, ["Assigned mountpoint template 'missing' does not exist."])
 
+    def test_config_validation_accepts_template_only_enabled_mount(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {
+                "mountpointTemplates": {
+                    "web": {
+                        "mounts": {
+                            "mp_123": {"label": "site", "path": tmp},
+                            "mp_456": {"label": "disabled", "path": tmp},
+                        }
+                    }
+                },
+                "users": [
+                    {
+                        "sftpuser": "alice",
+                        "sftpmounts": {},
+                        "mountTemplates": ["web"],
+                        "templatePoints": {
+                            "mp_123": {"enabled": True, "rw": False}
+                        },
+                        "sftpcerts": ["test-key"]
+                    }
+                ]
+            }
+
+            ok, error = parser_module.check_config_valid(cfg)
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+
+    def test_config_validation_requires_enabled_effective_mount(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = {
+                "mountpointTemplates": {
+                    "web": {
+                        "mounts": {
+                            "mp_123": {"label": "site", "path": tmp}
+                        }
+                    }
+                },
+                "users": [
+                    {
+                        "sftpuser": "alice",
+                        "sftpmounts": {},
+                        "mountTemplates": ["web"],
+                        "sftpcerts": ["test-key"]
+                    }
+                ]
+            }
+
+            ok, error = parser_module.check_config_valid(cfg)
+
+        self.assertFalse(ok)
+        self.assertIsNotNone(error)
+        self.assertIn("mountpoint", error.lower())
+
 
 class ParserTemplateApplyTests(unittest.TestCase):
     class ExistingMount:

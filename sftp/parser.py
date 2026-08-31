@@ -580,17 +580,20 @@ def check_config_valid(cfg: Dict) -> Tuple[bool, Optional[str]]:
         username = usr.get("sftpuser")
         if not username:
             return False, TXT_SFTP_PARSER_USER_FIELD_REQUIRED
-        mounts = usr.get("sftpmounts", {})
-        if not mounts:
+        mount_records, mount_errors = resolve_mountpoint_records(cfg, usr)
+        if mount_errors:
+            return False, TXT_SFTP_PARSER_MOUNT_CONFIG_INVALID.format(
+                username=username,
+                error=mount_errors[0],
+            )
+        for record in mount_records:
+            if not re.match(r"^[a-zA-Z0-9_\-]+$", record.label):
+                return False, TXT_SFTP_PARSER_MOUNT_LABEL_INVALID.format(label=record.label, username=username)
+            if not os.path.exists(record.path):
+                return False, TXT_SFTP_PARSER_MOUNT_PATH_INVALID.format(path=record.path, username=username)
+        if not effective_mountpoint_records(mount_records):
             return False, TXT_SFTP_PARSER_USER_MOUNT_REQUIRED.format(username=username)
-        for label, path in mounts.items():
-            if not re.match(r"^[a-zA-Z0-9_\-]+$", label):
-                return False, TXT_SFTP_PARSER_MOUNT_LABEL_INVALID.format(label=label, username=username)
-            if not os.path.isabs(path) or not os.path.exists(path):
-                return False, TXT_SFTP_PARSER_MOUNT_PATH_INVALID.format(path=path, username=username)
-            # zkonvertuejeme na string pro případ že je Path
-            mounts[label] = str(path)
-            
+
         keys = usr.get("sftpcerts", [])
         if not keys:
             return False, TXT_SFTP_PARSER_USER_KEY_REQUIRED.format(username=username)
