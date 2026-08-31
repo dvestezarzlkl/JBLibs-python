@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "commit_message": "JBLibs 1.2.31: validate resolved SFTP template mounts",
+  "replacements": [
+    {
+      "path": "sftp/parser.py",
+      "old": "        mounts = usr.get(\"sftpmounts\", {})\n        if not mounts:\n            return False, TXT_SFTP_PARSER_USER_MOUNT_REQUIRED.format(username=username)\n        for label, path in mounts.items():\n            if not re.match(r\"^[a-zA-Z0-9_\\-]+$\", label):\n                return False, TXT_SFTP_PARSER_MOUNT_LABEL_INVALID.format(label=label, username=username)\n            if not os.path.isabs(path) or not os.path.exists(path):\n                return False, TXT_SFTP_PARSER_MOUNT_PATH_INVALID.format(path=path, username=username)\n            # zkonvertuejeme na string pro případ že je Path\n            mounts[label] = str(path)\n            \n        keys = usr.get(\"sftpcerts\", [])\n",
+      "new": "        mount_records, mount_errors = resolve_mountpoint_records(cfg, usr)\n        if mount_errors:\n            return False, TXT_SFTP_PARSER_MOUNT_CONFIG_INVALID.format(\n                username=username,\n                error=mount_errors[0],\n            )\n        for record in mount_records:\n            if not re.match(r\"^[a-zA-Z0-9_\\-]+$\", record.label):\n                return False, TXT_SFTP_PARSER_MOUNT_LABEL_INVALID.format(label=record.label, username=username)\n            if not os.path.exists(record.path):\n                return False, TXT_SFTP_PARSER_MOUNT_PATH_INVALID.format(path=record.path, username=username)\n        if not effective_mountpoint_records(mount_records):\n            return False, TXT_SFTP_PARSER_USER_MOUNT_REQUIRED.format(username=username)\n            \n        keys = usr.get(\"sftpcerts\", [])\n",
+      "expected": 1
+    },
+    {
+      "path": "sftp/lng/default.py",
+      "old": "TXT_SFTP_PARSER_USER_MOUNT_REQUIRED = \"User '{username}' must have at least one mountpoint.\"\nTXT_SFTP_PARSER_MOUNT_LABEL_INVALID",
+      "new": "TXT_SFTP_PARSER_USER_MOUNT_REQUIRED = \"User '{username}' must have at least one enabled mountpoint.\"\nTXT_SFTP_PARSER_MOUNT_CONFIG_INVALID = \"Mountpoint configuration for user '{username}' is invalid: {error}\"\nTXT_SFTP_PARSER_MOUNT_LABEL_INVALID",
+      "expected": 1
+    },
+    {
+      "path": "sftp/lng/cs-CZ.py",
+      "old": "TXT_SFTP_PARSER_USER_MOUNT_REQUIRED = \"Uživatel '{username}' musí mít alespoň jeden mountpoint.\"\nTXT_SFTP_PARSER_MOUNT_LABEL_INVALID",
+      "new": "TXT_SFTP_PARSER_USER_MOUNT_REQUIRED = \"Uživatel '{username}' musí mít alespoň jeden povolený mountpoint.\"\nTXT_SFTP_PARSER_MOUNT_CONFIG_INVALID = \"Konfigurace mountpointů uživatele '{username}' je neplatná: {error}\"\nTXT_SFTP_PARSER_MOUNT_LABEL_INVALID",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_sftp_template_mounts.py",
+      "old": "    def test_missing_assigned_template_is_error(self):\n        user = {\"sftpuser\": \"alice\", \"mountTemplates\": [\"missing\"]}\n        records, errors = resolve_mountpoint_records({\"users\": [user]}, user)\n        self.assertEqual(records, [])\n        self.assertEqual(errors, [\"Assigned mountpoint template 'missing' does not exist.\"])\n\n\nclass ParserTemplateApplyTests(unittest.TestCase):\n",
+      "new": "    def test_missing_assigned_template_is_error(self):\n        user = {\"sftpuser\": \"alice\", \"mountTemplates\": [\"missing\"]}\n        records, errors = resolve_mountpoint_records({\"users\": [user]}, user)\n        self.assertEqual(records, [])\n        self.assertEqual(errors, [\"Assigned mountpoint template 'missing' does not exist.\"])\n\n    def test_config_validation_accepts_template_only_enabled_mount(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            cfg = {\n                \"mountpointTemplates\": {\n                    \"web\": {\n                        \"mounts\": {\n                            \"mp_123\": {\"label\": \"site\", \"path\": tmp},\n                            \"mp_456\": {\"label\": \"disabled\", \"path\": tmp},\n                        }\n                    }\n                },\n                \"users\": [\n                    {\n                        \"sftpuser\": \"alice\",\n                        \"sftpmounts\": {},\n                        \"mountTemplates\": [\"web\"],\n                        \"templatePoints\": {\n                            \"mp_123\": {\"enabled\": True, \"rw\": False},\n                        },\n                        \"sftpcerts\": [\"test-key\"],\n                    }\n                ],\n            }\n\n            ok, error = parser_module.check_config_valid(cfg)\n\n        self.assertTrue(ok)\n        self.assertIsNone(error)\n\n    def test_config_validation_requires_enabled_effective_mount(self):\n        with tempfile.TemporaryDirectory() as tmp:\n            cfg = {\n                \"mountpointTemplates\": {\n                    \"web\": {\n                        \"mounts\": {\n                            \"mp_123\": {\"label\": \"site\", \"path\": tmp},\n                        }\n                    }\n                },\n                \"users\": [\n                    {\n                        \"sftpuser\": \"alice\",\n                        \"sftpmounts\": {},\n                        \"mountTemplates\": [\"web\"],\n                        \"sftpcerts\": [\"test-key\"],\n                    }\n                ],\n            }\n\n            ok, error = parser_module.check_config_valid(cfg)\n\n        self.assertFalse(ok)\n        self.assertIsNotNone(error)\n        self.assertIn(\"mountpoint\", error.lower())\n\n\nclass ParserTemplateApplyTests(unittest.TestCase):\n",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.30\"\n\n# 1.2.30: SFTP resolves managed mountpoint templates and disabled per-user mountpoints before Apply\n",
+      "new": "__version__ = \"1.2.31\"\n\n# 1.2.31: SFTP config validation uses resolved local/template mountpoints and requires one enabled effective mount\n# 1.2.30: SFTP resolves managed mountpoint templates and disabled per-user mountpoints before Apply\n",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "assert v == \"1.2.30\"",
+      "new": "assert v == \"1.2.31\"",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-fs-utils.yml",
+      "old": "assert version == \"1.2.30\"",
+      "new": "assert version == \"1.2.31\"",
+      "expected": 1
+    },
+    {
+      "path": "sftp/AGENTS.md",
+      "old": "- `check_config_valid()` should validate optional mail fields when present, but not require them.\n- Validation messages returned by `check_config_valid()` are user-visible",
+      "new": "- `check_config_valid()` should validate optional mail fields when present, but not require them. Mountpoint validation must use `resolve_mountpoint_records()` for local + template state and require at least one enabled effective mountpoint per user; do not gate template users on raw `sftpmounts`.\n- Validation messages returned by `check_config_valid()` are user-visible",
+      "expected": 1
+    }
+  ]
+}
