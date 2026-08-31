@@ -210,6 +210,7 @@ class SambaBatchTransactionTests(unittest.TestCase):
             (target / "stale.txt").write_text("stale", encoding="utf-8")
             configured = [("//127.0.0.1/sftp_mount_alice_docs", str(target))]
             samba_module.smbHelp.requireSambaRestart = True
+            samba_module.smbHelp.toRemove.append(str(target))
             with patch.object(samba_module.smbHelp, "getMountedManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True):
                 self.assertFalse(samba_module.smbHelp.finalizeMountpointChanges())
             self.assertIsInstance(samba_module.smbHelp.lastError, samba_module.ManagedCIFSTargetNotEmptyError)
