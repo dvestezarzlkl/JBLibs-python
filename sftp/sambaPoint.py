@@ -537,6 +537,13 @@ class smbHelp:
         )
 
     @staticmethod
+    def _managedCIFSShareName(source:str)->str|None:
+        """Vrátí jméno spravovaného share ze zdrojové CIFS cesty."""
+        if not smbHelp._isManagedCIFSSource(source):
+            return None
+        return source.rstrip("/").rsplit("/", 1)[-1]
+
+    @staticmethod
     def getMountedManagedCIFS()->list[tuple[str, str]]:
         """Vrátí (source, target) všech aktivních spravovaných loopback CIFS mountů."""
         mounts:list[tuple[str, str]] = []
@@ -579,9 +586,38 @@ class smbHelp:
         return mounts
 
     @staticmethod
-    def unmountAllManagedCIFS()->None:
-        """Odmountuje všechny aktivní spravované CIFS mounty před změnou Samba služby."""
-        for source, target in reversed(smbHelp.getMountedManagedCIFS()):
+    def getBatchAffectedCIFSTargets(
+        mounted_mounts:list[tuple[str, str]],
+        configured_mounts:list[tuple[str, str]]
+    )->set[str]:
+        """Odvodí fyzické CIFS targety změněné v aktuální dávce.
+
+        toRemove pokrývá odstranění a recreate. toMount pokrývá nové pointy.
+        toCloseShares zachová identitu změněného share i při pre-delete záloze,
+        která záměrně odebere target z toRemove.
+        """
+        affected_targets = set(smbHelp.toRemove)
+        affected_shares = set(smbHelp.toCloseShares)
+        for source in smbHelp.toMount:
+            share_name = smbHelp._managedCIFSShareName(source)
+            if share_name:
+                affected_shares.add(share_name)
+
+        for source, target in [*mounted_mounts, *configured_mounts]:
+            share_name = smbHelp._managedCIFSShareName(source)
+            if target in affected_targets or share_name in affected_shares:
+                affected_targets.add(target)
+        return affected_targets
+
+    @staticmethod
+    def unmountManagedCIFS(
+        mounts:list[tuple[str, str]],
+        targets:set[str]
+    )->None:
+        """Odmountuje pouze spravované CIFS targety změněné v aktuální dávce."""
+        for source, target in reversed(mounts):
+            if target not in targets:
+                continue
             log.info(f"Unmounting managed CIFS mount {source} from {target} before Samba reload.")
             try:
                 subprocess.run(
@@ -690,9 +726,9 @@ class smbHelp:
     def finalizeMountpointChanges()->bool:
         """Dokončí Samba/CIFS změny v bezpečném pořadí jako jednu transakci.
 
-        Po úpravách smb.conf a /etc/fstab odmountuje všechny stále aktivní
-        spravované loopback CIFS mounty, načte novou Samba konfiguraci,
-        provede jediný daemon-reload a připojí výsledný stav z /etc/fstab.
+        Po úpravách smb.conf a /etc/fstab odmountuje pouze targety dotčené
+        aktuální dávkou. Nezměněné loopback CIFS mounty zůstávají připojené,
+        takže Apply nového pointu neselže na jejich otevřeném CWD.
         """
         smbHelp.lastError = None
         pending = smbHelp.requireSambaRestart or bool(smbHelp.toMount) or bool(smbHelp.toRemove)
@@ -701,15 +737,34 @@ class smbHelp:
             return True
 
         try:
+            mounted_mounts = smbHelp.getMountedManagedCIFS()
             configured_mounts = smbHelp.getConfiguredManagedCIFS()
             configured_targets = {target for _, target in configured_mounts}
+            affected_targets = smbHelp.getBatchAffectedCIFSTargets(
+                mounted_mounts,
+                configured_mounts
+            )
+            affected_configured_mounts = [
+                item for item in configured_mounts if item[1] in affected_targets
+            ]
+            affected_configured_targets = {
+                target for _, target in affected_configured_mounts
+            }
+            unchanged_mounted_count = sum(
+                1 for _, target in mounted_mounts if target not in affected_targets
+            )
+            log.info(
+                "Samba/CIFS batch affects "
+                f"{len(affected_targets)} target(s); "
+                f"{unchanged_mounted_count} unchanged mounted target(s) stay connected."
+            )
 
-            smbHelp.unmountAllManagedCIFS()
+            smbHelp.unmountManagedCIFS(mounted_mounts, affected_targets)
 
             if not smbHelp.removeQueuedMountpointDirectories(configured_targets):
                 raise RuntimeError("Failed to remove one or more obsolete mountpoint directories.")
 
-            smbHelp.prepareConfiguredMountpointDirectories(configured_targets)
+            smbHelp.prepareConfiguredMountpointDirectories(affected_configured_targets)
 
             if smbHelp.requireSambaRestart:
                 if not reloadSambaService():
@@ -722,7 +777,7 @@ class smbHelp:
             if not smbHelp.reloadSystemdDaemon():
                 raise RuntimeError("Failed to reload systemd after CIFS fstab changes.")
 
-            smbHelp.mountConfiguredManagedCIFS(configured_mounts)
+            smbHelp.mountConfiguredManagedCIFS(affected_configured_mounts)
             log.info("Samba/CIFS mountpoint transaction completed successfully.")
             return True
         except Exception as e:

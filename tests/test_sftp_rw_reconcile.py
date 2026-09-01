@@ -96,14 +96,59 @@ class SambaBatchTransactionTests(unittest.TestCase):
     def test_finalize_unmounts_before_cleanup_and_preserves_final_targets(self):
         events = []
         configured = [("//127.0.0.1/sftp_mount_alice_docs", "/jail/alice/docs")]
+        mounted = list(configured)
         samba_module.smbHelp.requireSambaRestart = True
         samba_module.smbHelp.toRemove.extend(["/jail/alice/docs", "/jail/alice/obsolete"])
         def cleanup(preserve):
             events.append(("cleanup", set(preserve)))
             return True
-        with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS", side_effect=lambda: events.append(("unmount", None))), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", side_effect=cleanup), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories", side_effect=lambda targets: events.append(("prepare", set(targets)))), patch.object(samba_module, "reloadSambaService", side_effect=lambda: events.append(("samba", None)) or True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", side_effect=lambda: events.append(("close", None)) or True), patch.object(samba_module.smbHelp, "reloadSystemdDaemon", side_effect=lambda: events.append(("systemd", None)) or True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS", side_effect=lambda mounts: events.append(("mount", mounts))):
+        with patch.object(samba_module.smbHelp, "getMountedManagedCIFS", return_value=mounted), patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountManagedCIFS", side_effect=lambda mounts, targets: events.append(("unmount", mounts, set(targets)))), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", side_effect=cleanup), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories", side_effect=lambda targets: events.append(("prepare", set(targets)))), patch.object(samba_module, "reloadSambaService", side_effect=lambda: events.append(("samba", None)) or True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", side_effect=lambda: events.append(("close", None)) or True), patch.object(samba_module.smbHelp, "reloadSystemdDaemon", side_effect=lambda: events.append(("systemd", None)) or True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS", side_effect=lambda mounts: events.append(("mount", mounts))):
             self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())
-        self.assertEqual(events, [("unmount", None), ("cleanup", {"/jail/alice/docs"}), ("prepare", {"/jail/alice/docs"}), ("samba", None), ("close", None), ("systemd", None), ("mount", configured)])
+        self.assertEqual(events, [("unmount", mounted, {"/jail/alice/docs", "/jail/alice/obsolete"}), ("cleanup", {"/jail/alice/docs"}), ("prepare", {"/jail/alice/docs"}), ("samba", None), ("close", None), ("systemd", None), ("mount", configured)])
+
+    def test_finalize_add_mount_keeps_unchanged_mounted_target(self):
+        events = []
+        mounted = [
+            ("//127.0.0.1/sftp_mount_alice_tmp", "/jail/alice/tmp"),
+        ]
+        new_mount = (
+            "//127.0.0.1/sftp_mount_alice_var",
+            "/jail/alice/var",
+        )
+        configured = [*mounted, new_mount]
+        samba_module.smbHelp.requireSambaRestart = True
+        samba_module.smbHelp.toMount.append(new_mount[0])
+
+        with patch.object(samba_module.smbHelp, "getMountedManagedCIFS", return_value=mounted), patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountManagedCIFS", side_effect=lambda mounts, targets: events.append(("unmount", mounts, set(targets)))), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", side_effect=lambda preserve: events.append(("cleanup", set(preserve))) or True), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories", side_effect=lambda targets: events.append(("prepare", set(targets)))), patch.object(samba_module, "reloadSambaService", side_effect=lambda: events.append(("samba", None)) or True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", side_effect=lambda: events.append(("close", None)) or True), patch.object(samba_module.smbHelp, "reloadSystemdDaemon", side_effect=lambda: events.append(("systemd", None)) or True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS", side_effect=lambda mounts: events.append(("mount", mounts))):
+            self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())
+
+        self.assertEqual(events, [
+            ("unmount", mounted, {"/jail/alice/var"}),
+            ("cleanup", {"/jail/alice/tmp", "/jail/alice/var"}),
+            ("prepare", {"/jail/alice/var"}),
+            ("samba", None),
+            ("close", None),
+            ("systemd", None),
+            ("mount", [new_mount]),
+        ])
+
+    def test_unmount_managed_cifs_skips_unchanged_target(self):
+        mounts = [
+            ("//127.0.0.1/sftp_mount_alice_tmp", "/jail/alice/tmp"),
+            ("//127.0.0.1/sftp_mount_alice_var", "/jail/alice/var"),
+        ]
+        proc = types.SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+        with patch.object(samba_module.subprocess, "run", return_value=proc) as run:
+            samba_module.smbHelp.unmountManagedCIFS(
+                mounts,
+                {"/jail/alice/var"},
+            )
+        run.assert_called_once_with(
+            ["umount", "/jail/alice/var"],
+            stdout=samba_module.subprocess.PIPE,
+            stderr=samba_module.subprocess.PIPE,
+            check=True,
+        )
 
     def test_remove_queue_keeps_target_recreated_in_same_batch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -165,7 +210,8 @@ class SambaBatchTransactionTests(unittest.TestCase):
             (target / "stale.txt").write_text("stale", encoding="utf-8")
             configured = [("//127.0.0.1/sftp_mount_alice_docs", str(target))]
             samba_module.smbHelp.requireSambaRestart = True
-            with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True):
+            samba_module.smbHelp.toRemove.append(str(target))
+            with patch.object(samba_module.smbHelp, "getMountedManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True):
                 self.assertFalse(samba_module.smbHelp.finalizeMountpointChanges())
             self.assertIsInstance(samba_module.smbHelp.lastError, samba_module.ManagedCIFSTargetNotEmptyError)
             self.assertEqual(samba_module.smbHelp.lastError.target, str(target))
@@ -173,7 +219,7 @@ class SambaBatchTransactionTests(unittest.TestCase):
     def test_close_share_failure_falls_back_to_full_samba_restart(self):
         configured = [("//127.0.0.1/sftp_mount_alice_docs", "/jail/alice/docs")]
         samba_module.smbHelp.requireSambaRestart = True
-        with patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountAllManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories"), patch.object(samba_module, "reloadSambaService", return_value=True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", return_value=False), patch.object(samba_module, "restartSambaService", return_value=True) as restart, patch.object(samba_module.smbHelp, "reloadSystemdDaemon", return_value=True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS"):
+        with patch.object(samba_module.smbHelp, "getMountedManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "getConfiguredManagedCIFS", return_value=configured), patch.object(samba_module.smbHelp, "unmountManagedCIFS"), patch.object(samba_module.smbHelp, "removeQueuedMountpointDirectories", return_value=True), patch.object(samba_module.smbHelp, "prepareConfiguredMountpointDirectories"), patch.object(samba_module, "reloadSambaService", return_value=True), patch.object(samba_module.smbHelp, "closeQueuedSambaShares", return_value=False), patch.object(samba_module, "restartSambaService", return_value=True) as restart, patch.object(samba_module.smbHelp, "reloadSystemdDaemon", return_value=True), patch.object(samba_module.smbHelp, "mountConfiguredManagedCIFS"):
             self.assertTrue(samba_module.smbHelp.finalizeMountpointChanges())
         restart.assert_called_once_with()
 
