@@ -108,7 +108,7 @@ def deleteUserFromGroup(username:str, group_name:str|None)->bool:
                         g
                     ], check=True)
         else:
-            if not checkUserInGroup(group_name):
+            if not checkUserInGroup(username, group_name):
                 return True  # už tam není
             subprocess.run([
                 "gpasswd",
