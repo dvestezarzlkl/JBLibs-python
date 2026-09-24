@@ -1,7 +1,7 @@
 from libs.JBLibs.helper import getLogger
 log = getLogger("sambaPoint")
 
-import os,re,pwd,time,grp,subprocess,socket
+import os,re,pwd,time,grp,subprocess,socket,secrets
 from ..systemdService import c_service
 from .mountPoint import sftpUserMountpoint
 import threading
@@ -11,9 +11,6 @@ SMB_CFG_DIR:str = "/etc/samba"
 
 SMB_SFT_USER:str = "sftp_samba_user"
 """Uživatelské jméno pro přístup k Samba SFTP mount pointům."""
-SMB_SFT_PWD:str = "fd8jS93jdj3kD93j"
-"""Heslo pro uživatele pro přístup k Samba SFTP mount pointům."""
-
 SMB_CRED_FILE:str = "/etc/samba/.smb_sftp_creds"
 
 __INIT_DONE__=False
@@ -44,22 +41,77 @@ class smbHelp:
     """Poslední konkrétní chyba nejvyšší Samba/CIFS batch transakce."""
 
     @staticmethod
-    def ensureSambaCredFile():
-        """Vytvoří credentials soubor pro CIFS mounty."""
+    def loadSambaCredFile()->str|None:
+        """Načte existující app-owned CIFS credential; chybějící soubor vrací None."""
+        if not os.path.exists(SMB_CRED_FILE):
+            return None
+        if not os.path.isfile(SMB_CRED_FILE):
+            raise RuntimeError(f"Samba credential path is not a regular file: {SMB_CRED_FILE}")
+
+        try:
+            values = {}
+            with open(SMB_CRED_FILE, "r") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    values[key.strip()] = value
+            if values.get("username") != SMB_SFT_USER:
+                raise RuntimeError(
+                    f"Samba credential file {SMB_CRED_FILE} has an unexpected username."
+                )
+            password = values.get("password")
+            if not password:
+                raise RuntimeError(
+                    f"Samba credential file {SMB_CRED_FILE} has no password."
+                )
+            os.chown(SMB_CRED_FILE, 0, 0)
+            os.chmod(SMB_CRED_FILE, 0o600)
+            return password
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Failed to read Samba credential file {SMB_CRED_FILE}: {e}") from e
+
+    @staticmethod
+    def createSambaCredFile(password:str)->None:
+        """Atomicky vytvoří nový root-only credentials soubor; existující nikdy nepřepisuje."""
         cred_dir = os.path.dirname(SMB_CRED_FILE)
         if not os.path.isdir(cred_dir):
             os.makedirs(cred_dir, exist_ok=True)
             os.chown(cred_dir, 0, 0)
             os.chmod(cred_dir, 0o700)
 
-        content = f"username={SMB_SFT_USER}\npassword={SMB_SFT_PWD}\n"
+        content = f"username={SMB_SFT_USER}\npassword={password}\n"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
         try:
-            with open(SMB_CRED_FILE, "w") as f:
-                f.write(content)
+            fd = os.open(SMB_CRED_FILE, flags, 0o600)
+            try:
+                os.write(fd, content.encode())
+            finally:
+                os.close(fd)
             os.chown(SMB_CRED_FILE, 0, 0)
             os.chmod(SMB_CRED_FILE, 0o600)
+        except FileExistsError:
+            raise RuntimeError(
+                f"Samba credential file {SMB_CRED_FILE} appeared during initialization; retry."
+            )
         except Exception as e:
-            raise RuntimeError(f"Failed to write Samba credential file {SMB_CRED_FILE}: {e}")
+            raise RuntimeError(f"Failed to create Samba credential file {SMB_CRED_FILE}: {e}") from e
+
+    @staticmethod
+    def ensureSambaCredFile()->tuple[str, bool]:
+        """Vrátí (password, created); nový secret generuje pouze při čisté instalaci."""
+        password = smbHelp.loadSambaCredFile()
+        if password is not None:
+            return password, False
+
+        password = secrets.token_urlsafe(32)
+        smbHelp.createSambaCredFile(password)
+        return password, True
 
     @staticmethod
     def checkSambaInstalled() -> bool:
@@ -81,53 +133,61 @@ class smbHelp:
         from shutil import which
         return which("mount.cifs") is not None
         
-    @staticmethod        
-    def ensureSambaUserPwd()->None:
-        """Zajistí, že uživatel pro přístup k Samba SFTP mount pointům má nastavené
-        správné heslo.
-        Raises:
-            RuntimeError: pokud dojde k chybě při nastavování hesla
-        """
+    @staticmethod
+    def sambaPassdbUserExists()->bool:
+        """Vrátí True, pokud je servisní uživatel už zapsaný v Samba passdb."""
         try:
-            import subprocess
+            proc = subprocess.run(
+                ["pdbedit", "-L", "-u", SMB_SFT_USER],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return proc.returncode == 0
+        except OSError as e:
+            raise RuntimeError(f"Failed to query Samba passdb user {SMB_SFT_USER}: {e}") from e
+
+    @staticmethod
+    def ensureSambaUserPwd(password:str)->None:
+        """Vytvoří/nastaví Samba passdb heslo z již uloženého app-owned credentialu."""
+        try:
             log.info(f"Setting password for Samba SFTP user {SMB_SFT_USER}.")
             subprocess.run([
                 "smbpasswd",
+                "-s",
                 "-a",
                 SMB_SFT_USER
-            ], input=f"{SMB_SFT_PWD}\n{SMB_SFT_PWD}\n".encode(), check=True)
+            ], input=f"{password}\n{password}\n".encode(), check=True)
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to set password for Samba SFTP user {SMB_SFT_USER}: {e}")
+            raise RuntimeError(f"Failed to set password for Samba SFTP user {SMB_SFT_USER}: {e}") from e
 
     @staticmethod
-    def ensureSambaUserExists()->None:
-        """Zajistí, že uživatel pro přístup k Samba SFTP mount pointům existuje.
-        Pokud neexistuje, vytvoří ho.
-        Raises:
-            RuntimeError: pokud dojde k chybě při kontrole nebo vytváření uživatele
-        """
+    def ensureSambaUserExists(password:str)->None:
+        """Zajistí UNIX i Samba passdb účet bez resetu hesla při běžném startu."""
         try:
             pwd.getpwnam(SMB_SFT_USER)
-            log.info(f"Samba SFTP user {SMB_SFT_USER} already exists.")
-            smbHelp.ensureSambaUserPwd()
-            return  # uživatel existuje
+            unix_exists = True
+            log.info(f"Samba SFTP UNIX user {SMB_SFT_USER} already exists.")
         except KeyError:
-            log.info(f"Samba SFTP user {SMB_SFT_USER} does not exist. Creating it.")
-        
-        try:
-            import subprocess
-            subprocess.run([
-                "useradd",
-                "-M",  # bez home dir
-                "-s", "/sbin/nologin",  # bez shellu
-                SMB_SFT_USER
-            ], check=True)
+            unix_exists = False
+            log.info(f"Samba SFTP UNIX user {SMB_SFT_USER} does not exist. Creating it.")
 
-            smbHelp.ensureSambaUserPwd()
-            
-            log.info(f"Samba SFTP user {SMB_SFT_USER} created successfully.")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to create Samba SFTP user {SMB_SFT_USER}: {e}")
+        if not unix_exists:
+            try:
+                subprocess.run([
+                    "useradd",
+                    "-M",
+                    "-s", "/sbin/nologin",
+                    SMB_SFT_USER
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Failed to create Samba SFTP user {SMB_SFT_USER}: {e}") from e
+
+        if smbHelp.sambaPassdbUserExists():
+            log.info(f"Samba passdb user {SMB_SFT_USER} already exists; keeping its password.")
+            return
+
+        smbHelp.ensureSambaUserPwd(password)
+        log.info(f"Samba SFTP user {SMB_SFT_USER} initialized successfully.")
 
     def write_or_replace_samba_section(section: str, content: str):
         """
@@ -845,22 +905,36 @@ def initEnsureSamba():
     """
     global __INIT_DONE__
     with __INIT_LOCK__:
-        if __INIT_DONE__ :
-            return  # už inicializováno
+        if __INIT_DONE__:
+            return
+
+        err=[]
+        if not smbHelp.checkSambaInstalled():
+            err.append("Samba is not installed on this system.")
+
+        if not smbHelp.checkCIFSInstalled():
+            err.append("CIFS utilities are not installed on this system.")
+
+        if err:
+            raise RuntimeError(" ; ".join(err))
+
+        try:
+            pwd.getpwnam(SMB_SFT_USER)
+            unix_exists = True
+        except KeyError:
+            unix_exists = False
+        samba_exists = smbHelp.sambaPassdbUserExists()
+        credential_exists = os.path.exists(SMB_CRED_FILE)
+
+        if not credential_exists and (unix_exists or samba_exists):
+            raise RuntimeError(
+                "Samba SFTP service account already exists but its managed credential file is missing; "
+                "refusing to generate a replacement automatically."
+            )
+
+        password, _ = smbHelp.ensureSambaCredFile()
+        smbHelp.ensureSambaUserExists(password)
         __INIT_DONE__ = True
-    
-    err=[]
-    if not smbHelp.checkSambaInstalled():
-        err.append("Samba is not installed on this system.")
-    
-    if not smbHelp.checkCIFSInstalled():
-        err.append("CIFS utilities are not installed on this system.")
-        
-    if err:
-        raise RuntimeError(" ; ".join(err))
-    
-    smbHelp.ensureSambaUserExists()
-    smbHelp.ensureSambaCredFile()
     
 def restartSambaService()->bool:
     """Restartuje samba službu

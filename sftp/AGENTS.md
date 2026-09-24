@@ -8,7 +8,9 @@
 - Validation messages returned by `check_config_valid()` are user-visible and must use the relative `sftp/lng/default.py` catalog with locale overrides loaded through `loadLng()`; technical parser logs may remain in English.
 - `createJson()` should preserve `adminMail` and per-user `mail` metadata when rebuilding config from active users.
 - `ssh.py` owns SSHD helpers.
-  - `restart_sshd()` must support both `ssh` and `sshd` service names and return a real boolean result.
+  - `restart_sshd()` must support both `ssh` and `sshd` service names, validate the effective configuration with `sshd -t` before touching the service, and return a real boolean result.
+- SFTP Manager support targets Ubuntu 20.04+; do not add Ubuntu 18-specific sshd compatibility fallbacks unless the project scope changes explicitly.
+- Samba loopback credentials are app-owned secrets: generate them on first clean initialization, store them root-only outside the repository, reuse existing credentials without resetting the Samba password on normal startup, and fail closed if an established service account loses its managed credential file.
 - Keep SSH and SFTP helper changes small and composable so the menu layer can stay thin.
 - Use `smbHelp.checkCIFSInstalled()` for CIFS availability checks; missing CIFS must be reported before a Samba-backed Apply starts changing users.
 - `sambaPoint.ensureMountpoint()` must re-raise its original failure and must never continue with an uninitialized `cifs_path`.
