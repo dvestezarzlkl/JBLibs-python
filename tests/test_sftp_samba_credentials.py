@@ -84,5 +84,34 @@ class SambaCredentialTests(unittest.TestCase):
         set_password.assert_called_once_with("stored-secret")
 
 
+    def test_failed_init_can_be_retried_in_same_process(self):
+        samba.__INIT_DONE__ = False
+        try:
+            with (
+                patch.object(samba.smbHelp, "checkSambaInstalled", return_value=True),
+                patch.object(samba.smbHelp, "checkCIFSInstalled", return_value=True),
+                patch.object(samba.pwd, "getpwnam", side_effect=KeyError),
+                patch.object(samba.smbHelp, "sambaPassdbUserExists", return_value=False),
+                patch.object(samba.os.path, "exists", return_value=False),
+                patch.object(
+                    samba.smbHelp,
+                    "ensureSambaCredFile",
+                    side_effect=[RuntimeError("synthetic init failure"), ("secret", True)],
+                ) as ensure_cred,
+                patch.object(samba.smbHelp, "ensureSambaUserExists") as ensure_user,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "synthetic init failure"):
+                    samba.initEnsureSamba()
+                self.assertFalse(samba.__INIT_DONE__)
+
+                samba.initEnsureSamba()
+                self.assertTrue(samba.__INIT_DONE__)
+
+            self.assertEqual(ensure_cred.call_count, 2)
+            ensure_user.assert_called_once_with("secret")
+        finally:
+            samba.__INIT_DONE__ = False
+
+
 if __name__ == "__main__":
     unittest.main()
