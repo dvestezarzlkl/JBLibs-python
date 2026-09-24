@@ -905,36 +905,36 @@ def initEnsureSamba():
     """
     global __INIT_DONE__
     with __INIT_LOCK__:
-        if __INIT_DONE__ :
-            return  # už inicializováno
+        if __INIT_DONE__:
+            return
+
+        err=[]
+        if not smbHelp.checkSambaInstalled():
+            err.append("Samba is not installed on this system.")
+
+        if not smbHelp.checkCIFSInstalled():
+            err.append("CIFS utilities are not installed on this system.")
+
+        if err:
+            raise RuntimeError(" ; ".join(err))
+
+        try:
+            pwd.getpwnam(SMB_SFT_USER)
+            unix_exists = True
+        except KeyError:
+            unix_exists = False
+        samba_exists = smbHelp.sambaPassdbUserExists()
+        credential_exists = os.path.exists(SMB_CRED_FILE)
+
+        if not credential_exists and (unix_exists or samba_exists):
+            raise RuntimeError(
+                "Samba SFTP service account already exists but its managed credential file is missing; "
+                "refusing to generate a replacement automatically."
+            )
+
+        password, _ = smbHelp.ensureSambaCredFile()
+        smbHelp.ensureSambaUserExists(password)
         __INIT_DONE__ = True
-    
-    err=[]
-    if not smbHelp.checkSambaInstalled():
-        err.append("Samba is not installed on this system.")
-    
-    if not smbHelp.checkCIFSInstalled():
-        err.append("CIFS utilities are not installed on this system.")
-        
-    if err:
-        raise RuntimeError(" ; ".join(err))
-    
-    try:
-        pwd.getpwnam(SMB_SFT_USER)
-        unix_exists = True
-    except KeyError:
-        unix_exists = False
-    samba_exists = smbHelp.sambaPassdbUserExists()
-    credential_exists = os.path.exists(SMB_CRED_FILE)
-
-    if not credential_exists and (unix_exists or samba_exists):
-        raise RuntimeError(
-            "Samba SFTP service account already exists but its managed credential file is missing; "
-            "refusing to generate a replacement automatically."
-        )
-
-    password, _ = smbHelp.ensureSambaCredFile()
-    smbHelp.ensureSambaUserExists(password)
     
 def restartSambaService()->bool:
     """Restartuje samba službu
