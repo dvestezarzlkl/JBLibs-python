@@ -12,7 +12,8 @@ pro jednotlivé SFTP uživatele, stejně jako pro správu jejich jail adresář�
 """
 
 from ...JBLibs import helper as jhlp
-import os,pwd
+import os,pwd,subprocess
+from shutil import which
 from ..systemdService import c_service
 
 SSHD_DIR = "/etc/ssh/sshd_config.d"
@@ -291,12 +292,42 @@ def ensureJail(username:str,testOnly:bool=False)->str|None:
     log.info(f" < Successfully ensured jail directory for user {username} at {jail_dir}.")
     return jail_dir
 
+def validate_sshd_config()->bool:
+    """Ověří aktuální sshd konfiguraci před zásahem do služby."""
+    sshd_bin = which("sshd")
+    if sshd_bin is None and os.path.isfile("/usr/sbin/sshd"):
+        sshd_bin = "/usr/sbin/sshd"
+    if sshd_bin is None:
+        log.error(" < Cannot validate sshd config: sshd binary was not found.")
+        return False
+
+    try:
+        proc = subprocess.run(
+            [sshd_bin, "-t"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as e:
+        log.error(f" < Failed to execute sshd config validation: {e}")
+        return False
+
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode(errors="replace").strip() if proc.stderr else f"return code {proc.returncode}"
+        log.error(f" < sshd configuration validation failed: {stderr}")
+        return False
+    return True
+
+
 def restart_sshd()->bool:
-    """Restartuje sshd službu.
+    """Restartuje sshd službu pouze po úspěšné validaci konfigurace.
     Returns:
         bool: True pokud byl restart úspěšný, False pokud došlo k chybě
     """
     log.info("Restarting sshd service")
+
+    if not validate_sshd_config():
+        log.error(" < Refusing to restart sshd with invalid configuration.")
+        return False
     
     s = None
     for service_name in ("ssh", "sshd"):
