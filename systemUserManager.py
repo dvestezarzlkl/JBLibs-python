@@ -33,7 +33,35 @@ class sshMng:
         except KeyError:
             return None
         return pw.pw_dir
-    
+
+    @staticmethod
+    def getUserShell(username:str)->str|None:
+        """Return the configured login shell for a system user."""
+        try:
+            return pwd.getpwnam(username).pw_shell or None
+        except KeyError:
+            return None
+
+    @staticmethod
+    def userUsesBash(username:str)->bool:
+        """True when the user's configured login shell is Bash."""
+        shell = sshMng.getUserShell(username)
+        return bool(shell) and os.path.basename(shell) == "bash"
+
+    @staticmethod
+    def setUserShell(username:str, shell:str="/bin/bash")->Union[str, None]:
+        """Set a system user's login shell. Returns an error string on failure."""
+        if not userExists(username):
+            return f"System user does not exist: {username}"
+        if not isinstance(shell, str) or not os.path.isabs(shell) or not os.path.isfile(shell):
+            return f"Invalid login shell: {shell}"
+        try:
+            subprocess.run(['usermod', '-s', shell, username], check=True)
+        except (OSError, subprocess.CalledProcessError) as e:
+            log.error(f"Error changing login shell for user {username} to {shell}: {e}", exc_info=True)
+            return f"Error changing login shell for user {username}: {e}"
+        return None
+
     @staticmethod
     def getFilePath_auth(username, check:bool=False) -> Union[str, None]:
         """
