@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "commit_message": "JBLibs 1.2.32: add system user login shell helpers",
+  "replacements": [
+    {
+      "path": "systemUserManager.py",
+      "old": "        return pw.pw_dir\n    \n    @staticmethod\n    def getFilePath_auth(username, check:bool=False) -> Union[str, None]:",
+      "new": "        return pw.pw_dir\n\n    @staticmethod\n    def getUserShell(username:str)->str|None:\n        \"\"\"Return the configured login shell for a system user.\"\"\"\n        try:\n            return pwd.getpwnam(username).pw_shell or None\n        except KeyError:\n            return None\n\n    @staticmethod\n    def userUsesBash(username:str)->bool:\n        \"\"\"True when the user's configured login shell is Bash.\"\"\"\n        shell = sshMng.getUserShell(username)\n        return bool(shell) and os.path.basename(shell) == \"bash\"\n\n    @staticmethod\n    def setUserShell(username:str, shell:str=\"/bin/bash\")->Union[str, None]:\n        \"\"\"Set a system user's login shell. Returns an error string on failure.\"\"\"\n        if not userExists(username):\n            return f\"System user does not exist: {username}\"\n        if not isinstance(shell, str) or not os.path.isabs(shell) or not os.path.isfile(shell):\n            return f\"Invalid login shell: {shell}\"\n        try:\n            subprocess.run(['usermod', '-s', shell, username], check=True)\n        except (OSError, subprocess.CalledProcessError) as e:\n            log.error(f\"Error changing login shell for user {username} to {shell}: {e}\", exc_info=True)\n            return f\"Error changing login shell for user {username}: {e}\"\n        return None\n    \n    @staticmethod\n    def getFilePath_auth(username, check:bool=False) -> Union[str, None]:",
+      "expected": 1
+    },
+    {
+      "path": "__init__.py",
+      "old": "__version__ = \"1.2.31\"\n\n# 1.2.31:",
+      "new": "__version__ = \"1.2.32\"\n\n# 1.2.32: system user manager can inspect and change login shells; Bash detection is reusable by SysApps\n# 1.2.31:",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-fs-utils.yml",
+      "old": "assert version == \"1.2.31\"",
+      "new": "assert version == \"1.2.32\"",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "assert v == \"1.2.31\"",
+      "new": "assert v == \"1.2.32\"",
+      "expected": 1
+    }
+  ]
+}
