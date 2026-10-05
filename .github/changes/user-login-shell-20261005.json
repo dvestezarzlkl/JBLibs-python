@@ -25,6 +25,24 @@
       "old": "assert v == \"1.2.31\"",
       "new": "assert v == \"1.2.32\"",
       "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "      - \"archive_backup.py\"\n      - \"__init__.py\"",
+      "new": "      - \"archive_backup.py\"\n      - \"systemUserManager.py\"\n      - \"__init__.py\"\n      - \"tests/test_system_user_shell.py\"",
+      "expected": 2
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "tests/test_sftp_template_mounts.py",
+      "new": "tests/test_sftp_template_mounts.py tests/test_system_user_shell.py",
+      "expected": 1
+    },
+    {
+      "path": ".github/workflows/test-sftp-rw-reconcile.yml",
+      "old": "tests.test_sftp_ssh_validation",
+      "new": "tests.test_sftp_ssh_validation tests.test_system_user_shell",
+      "expected": 1
     }
   ]
 }
