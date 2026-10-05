@@ -34,8 +34,8 @@
     },
     {
       "path": ".github/workflows/test-sftp-rw-reconcile.yml",
-      "old": "tests/test_sftp_template_mounts.py",
-      "new": "tests/test_sftp_template_mounts.py tests/test_system_user_shell.py",
+      "old": "        run: PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py sftp/parser.py sftp/mountpoint_templates.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py tests/test_sftp_template_mounts.py",
+      "new": "        run: PYTHONPATH=/tmp/jblibs-test python -m py_compile archive_backup.py systemUserManager.py sftp/parser.py sftp/mountpoint_templates.py sftp/mounts.py sftp/user.py sftp/sambaPoint.py tests/test_archive_backup.py tests/test_sftp_rw_reconcile.py tests/test_sftp_template_mounts.py tests/test_system_user_shell.py",
       "expected": 1
     },
     {
