@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "commit_message": "SFTP tests: import subprocess for CIFS retry regression",
+  "replacements": [
+    {
+      "path": "tests/test_sftp_rw_reconcile.py",
+      "old": "import json\nimport sys",
+      "new": "import json\nimport subprocess\nimport sys",
+      "expected": 1
+    }
+  ]
+}
