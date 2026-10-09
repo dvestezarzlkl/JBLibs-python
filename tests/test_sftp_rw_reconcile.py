@@ -150,6 +150,40 @@ class SambaBatchTransactionTests(unittest.TestCase):
             check=True,
         )
 
+    def test_mount_configured_cifs_retries_transient_enoent(self):
+        target = "/jail/alice/docs"
+        source = "//127.0.0.1/sftp_mount_alice_docs"
+        transient = subprocess.CalledProcessError(
+            32,
+            ["mount", target],
+            stderr=b"mount error(2): No such file or directory",
+        )
+        success = subprocess.CompletedProcess(["mount", target], 0, b"", b"")
+        with patch.object(samba_module.os.path, "isdir", return_value=True), patch.object(
+            samba_module.subprocess, "run", side_effect=[transient, success]
+        ) as run, patch.object(samba_module.time, "sleep") as sleep:
+            samba_module.smbHelp.mountConfiguredManagedCIFS([(source, target)])
+
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(samba_module.smbHelp.CIFS_MOUNT_RETRY_DELAY)
+
+    def test_mount_configured_cifs_does_not_retry_permanent_error(self):
+        target = "/jail/alice/docs"
+        source = "//127.0.0.1/sftp_mount_alice_docs"
+        denied = subprocess.CalledProcessError(
+            32,
+            ["mount", target],
+            stderr=b"mount error(13): Permission denied",
+        )
+        with patch.object(samba_module.os.path, "isdir", return_value=True), patch.object(
+            samba_module.subprocess, "run", side_effect=denied
+        ) as run, patch.object(samba_module.time, "sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "Permission denied"):
+                samba_module.smbHelp.mountConfiguredManagedCIFS([(source, target)])
+
+        run.assert_called_once()
+        sleep.assert_not_called()
+
     def test_remove_queue_keeps_target_recreated_in_same_batch(self):
         with tempfile.TemporaryDirectory() as tmp:
             keep = Path(tmp) / "keep"
