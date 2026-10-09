@@ -39,6 +39,10 @@ class smbHelp:
     """Hloubka vnořené dávky změn; post-processing proběhne až při návratu na nulu."""
     lastError:Exception|None = None
     """Poslední konkrétní chyba nejvyšší Samba/CIFS batch transakce."""
+    CIFS_MOUNT_RETRY_COUNT:int = 20
+    """Počet opakování transientního CIFS ENOENT po reloadu Samba."""
+    CIFS_MOUNT_RETRY_DELAY:float = 0.25
+    """Prodleva mezi opakovanými mount pokusy po reloadu Samba."""
 
     @staticmethod
     def loadSambaCredFile()->str|None:
@@ -692,19 +696,44 @@ class smbHelp:
 
     @staticmethod
     def mountConfiguredManagedCIFS(mounts:list[tuple[str, str]])->None:
-        """Připojí všechny spravované CIFS položky, které po změnách zůstaly v /etc/fstab."""
+        """Připojí spravované CIFS položky po Samba reloadu.
+
+        Samba může po úspěšném systemctl reload smbd krátce přijímat spojení,
+        ale nový/změněný share ještě nemusí být viditelný všem workerům. V tom
+        případě mount.cifs typicky vrátí ENOENT. Takový stav krátce opakujeme;
+        ostatní chyby selžou okamžitě.
+        """
         for source, target in mounts:
             log.info(f"Mounting configured CIFS mount {source} on {target}.")
-            try:
-                subprocess.run(
-                    ["mount", target],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True
-                )
-            except subprocess.CalledProcessError as e:
-                stderr = e.stderr.decode().strip() if e.stderr else str(e)
-                raise RuntimeError(f"Failed to mount configured CIFS mount {target}: {stderr}") from e
+            if not os.path.isdir(target):
+                raise RuntimeError(f"Configured CIFS mount target does not exist: {target}")
+
+            attempt = 0
+            while True:
+                try:
+                    subprocess.run(
+                        ["mount", target],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=True
+                    )
+                    break
+                except subprocess.CalledProcessError as e:
+                    stderr = e.stderr.decode(errors="replace").strip() if e.stderr else str(e)
+                    transient_enoent = (
+                        "mount error(2)" in stderr
+                        or "No such file or directory" in stderr
+                    )
+                    if transient_enoent and attempt < smbHelp.CIFS_MOUNT_RETRY_COUNT:
+                        attempt += 1
+                        log.warning(
+                            f"CIFS share {source} is not ready after Samba reload "
+                            f"(attempt {attempt}/{smbHelp.CIFS_MOUNT_RETRY_COUNT}); "
+                            f"retrying in {smbHelp.CIFS_MOUNT_RETRY_DELAY}s: {stderr}"
+                        )
+                        time.sleep(smbHelp.CIFS_MOUNT_RETRY_DELAY)
+                        continue
+                    raise RuntimeError(f"Failed to mount configured CIFS mount {target}: {stderr}") from e
 
     @staticmethod
     def closeQueuedSambaShares()->bool:
