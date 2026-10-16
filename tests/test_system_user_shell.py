@@ -58,5 +58,16 @@ class TestSSHUserDiscovery(unittest.TestCase):
 
 
 
+    def test_only_orphaned_home_directories_yield_empty_menu(self):
+        with (
+            patch("libs.JBLibs.helper.os.listdir", return_value=["samba_all"]),
+            patch("libs.JBLibs.helper.os.path.isdir", return_value=True),
+            patch("libs.JBLibs.helper.pwd.getpwnam", side_effect=KeyError("samba_all")),
+        ):
+            users = sshUsers()
+
+        self.assertEqual(len(users), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
