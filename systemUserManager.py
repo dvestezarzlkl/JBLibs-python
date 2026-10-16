@@ -1108,7 +1108,9 @@ class sshUsers:
     def refresh(self):
         """Aktualizuje seznam uživatelů"""
         self._users=[]
-        for u in getUserList(None):
+        # /home may contain legacy or application directories without a UNIX account.
+        # List only real system users, leaving orphaned directories untouched.
+        for u in getUserList(userExists):
             self._users.append(sshUser(u))
             
     def getUser(self,userName:str)->Union[sshUser, None]:

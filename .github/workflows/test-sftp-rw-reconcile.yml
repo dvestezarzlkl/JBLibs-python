@@ -47,4 +47,4 @@ jobs:
       - name: Run tests
         run: PYTHONPATH=/tmp/jblibs-test python -m unittest -v tests.test_archive_backup tests.test_sftp_rw_reconcile tests.test_sftp_template_mounts tests.test_sftp_user_groups tests.test_sftp_samba_credentials tests.test_sftp_ssh_validation
       - name: Verify version
-        run: python -c 'import re,pathlib; v=re.search(r"^__version__ = \"([^\"]+)\"", pathlib.Path("__init__.py").read_text(), re.M).group(1); assert v == "1.2.31"'
+        run: python -c 'import re,pathlib; v=re.search(r"^__version__ = \"([^\"]+)\"", pathlib.Path("__init__.py").read_text(), re.M).group(1); assert v == "1.2.32"'

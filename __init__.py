@@ -1,5 +1,6 @@
-__version__ = "1.2.31"
+__version__ = "1.2.32"
 
+# 1.2.32: SSH user discovery ignores /home folders without matching system accounts
 # 1.2.31: SFTP fixes group removal, managed Samba credentials/init retry and validates sshd config before restart
 # 1.2.30 hotfix: Samba/CIFS Apply detaches only changed targets and preserves unchanged busy mounts
 # 1.2.30: SFTP resolves managed mountpoint templates and disabled per-user mountpoints before Apply
