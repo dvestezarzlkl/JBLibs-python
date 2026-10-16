@@ -56,8 +56,6 @@ class TestSSHUserDiscovery(unittest.TestCase):
         self.assertEqual(len(users), 1)
         create_user.assert_called_once_with("alice")
 
-
-
     def test_only_orphaned_home_directories_yield_empty_menu(self):
         with (
             patch("libs.JBLibs.helper.os.listdir", return_value=["samba_all"]),
