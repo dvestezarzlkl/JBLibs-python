@@ -88,3 +88,10 @@ ok, error = send_message(
 BCC recipients are included only in the SMTP envelope and never written into a
 message header. Invalid recipient entries are ignored, but at least one valid
 `To` address is required.
+
+A successful return means the SMTP relay accepted all envelope recipients, **not**
+that the message reached their mailboxes. If the relay rejects only some
+recipients, `send_message()` returns `False` with the accepted and rejected
+addresses and SMTP codes. Some recipients may already receive the message;
+do not automatically resend the full list. No message body, attachment, server
+response text or SMTP credentials are written to the error description.
