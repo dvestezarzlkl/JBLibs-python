@@ -199,6 +199,23 @@ class MailTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "starttls" for call in fake.calls))
         self.assertFalse(any(call[0] == "login" for call in fake.calls))
 
+    def test_send_message_accepts_empty_smtp_rejection_dict(self):
+        class AcceptAllSMTP(FakeSMTP):
+            def send_message(self, message, from_addr, to_addrs):
+                super().send_message(message, from_addr, to_addrs)
+                return {}
+
+        with patch("mail.smtplib.SMTP", return_value=AcceptAllSMTP("smtp.example.test", 25, 20)):
+            ok, error = mail.send_message(
+                smtp_settings=mail.SmtpSettings("smtp.example.test", 25, mode="plain"),
+                mail_from="sender@example.test",
+                recipients=["one@example.test", "two@example.test"],
+                subject="Subject",
+                body="Body",
+            )
+
+        self.assertEqual((ok, error), (True, None))
+
     def test_send_message_reports_partial_recipient_rejection(self):
         class PartialSMTP(FakeSMTP):
             def send_message(self, message, from_addr, to_addrs):
