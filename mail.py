@@ -307,7 +307,7 @@ def send_message(
                 smtp.ehlo()
             if smtp_settings.username:
                 smtp.login(smtp_settings.username, smtp_settings.password)
-            smtp.send_message(
+            refused = smtp.send_message(
                 message,
                 from_addr=mail_from.strip().lower(),
                 to_addrs=envelope_recipients,
@@ -315,5 +315,18 @@ def send_message(
     except Exception as exc:
         error_text = _redact_secrets(str(exc), [smtp_settings.password])
         return False, f"Failed to send mail via SMTP: {error_text}"
+
+    # smtplib returns a dict of rejected RCPT addresses when at least one
+    # recipient was accepted. Ignoring it would report a false full success.
+    if refused:
+        rejected_addresses = {address.lower() for address in refused}
+        accepted = [address for address in envelope_recipients if address.lower() not in rejected_addresses]
+        rejected = ", ".join(
+            f"{address} (SMTP {reply[0]})" for address, reply in refused.items()
+        )
+        return False, (
+            f"SMTP recipient rejection: accepted={accepted}; rejected={rejected}. "
+            "Accepted recipients may already receive the message; do not resend to everyone."
+        )
 
     return True, None

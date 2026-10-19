@@ -199,6 +199,45 @@ class MailTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "starttls" for call in fake.calls))
         self.assertFalse(any(call[0] == "login" for call in fake.calls))
 
+    def test_send_message_accepts_empty_smtp_rejection_dict(self):
+        class AcceptAllSMTP(FakeSMTP):
+            def send_message(self, message, from_addr, to_addrs):
+                super().send_message(message, from_addr, to_addrs)
+                return {}
+
+        with patch("mail.smtplib.SMTP", return_value=AcceptAllSMTP("smtp.example.test", 25, 20)):
+            ok, error = mail.send_message(
+                smtp_settings=mail.SmtpSettings("smtp.example.test", 25, mode="plain"),
+                mail_from="sender@example.test",
+                recipients=["one@example.test", "two@example.test"],
+                subject="Subject",
+                body="Body",
+            )
+
+        self.assertEqual((ok, error), (True, None))
+
+    def test_send_message_reports_partial_recipient_rejection(self):
+        class PartialSMTP(FakeSMTP):
+            def send_message(self, message, from_addr, to_addrs):
+                super().send_message(message, from_addr, to_addrs)
+                return {"blocked@example.test": (550, b"private remote reason")}
+
+        fake = PartialSMTP("smtp.example.test", 25, 20)
+        with patch("mail.smtplib.SMTP", return_value=fake):
+            ok, error = mail.send_message(
+                smtp_settings=mail.SmtpSettings("smtp.example.test", 25, mode="plain"),
+                mail_from="sender@example.test",
+                recipients=["accepted@example.test", "blocked@example.test"],
+                subject="Subject",
+                body="Body",
+            )
+
+        self.assertFalse(ok)
+        self.assertIn("accepted@example.test", error)
+        self.assertIn("blocked@example.test (SMTP 550)", error)
+        self.assertIn("do not resend", error)
+        self.assertNotIn("private remote reason", error)
+
     def test_send_message_redacts_password_from_error(self):
         password = "top-secret-password"
         fake = FailingSMTP("smtp.example.test", 587, 20)
