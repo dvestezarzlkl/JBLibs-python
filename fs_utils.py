@@ -409,29 +409,51 @@ def lsblk_list_disks(
     if isinstance(filterDev, str) and filterDevIsRegex:
         filterDev = re.compile(filterDev)
         
-    # lsblk -no NAME,LABEL,SIZE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS --json
-    old=False
-    o,r,e = runRet(
-        ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS,PTUUID"],
-        stdOutOnly=False
-    )
-    if r!=0:
-        if "unknown column" in e and "MOUNTPOINTS" in e:
-            # starší verze lsblk která nepodporuje MOUNTPOINTS ale jen MOUNTPOINT
-            o,r,e = runRet(
-                ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINT,PTUUID"],
-                stdOutOnly=False
-            )
-            if r!=0:
-                raise lsblkError(f"lsblk command failed: {e.strip()}")
-            old=True
+    # Older lsblk versions may not support MOUNTPOINTS and/or PTUUID.
+    # Retry only for known unsupported columns; never ignore an unrelated failure.
+    columns = ["NAME", "LABEL", "SIZE", "TYPE", "FSTYPE",
+               "UUID", "PARTUUID", "MOUNTPOINTS", "PTUUID"]
+    while True:
+        o, r, e = runRet(
+            ["lsblk", "-J", "-b", "-o", ",".join(columns)],
+            stdOutOnly=False
+        )
+        if r == 0:
+            break
+        error_text = str(e or "")
+        if "unknown column" not in error_text.lower():
+            raise lsblkError(f"lsblk command failed: {error_text.strip()}")
+        if "MOUNTPOINTS" in error_text.upper() and "MOUNTPOINTS" in columns:
+            columns[columns.index("MOUNTPOINTS")] = "MOUNTPOINT"
+        elif "PTUUID" in error_text.upper() and "PTUUID" in columns:
+            columns.remove("PTUUID")
         else:
-            raise lsblkError(f"lsblk command failed: {e.strip()}")
-    
+            raise lsblkError(f"lsblk command failed: {error_text.strip()}")
+
     data = json.loads(o)
-    if old:
-        # upravit data aby používala MOUNTPOINTS jako list
-        _fix_mountpoints(data.get('blockdevices', []))        
+    nodes = data.get("blockdevices", [])
+    if "MOUNTPOINT" in columns:
+        _fix_mountpoints(nodes)
+    if "PTUUID" not in columns:
+        # On legacy lsblk, read the disk's actual partition-table UUID via blkid.
+        # Missing/unreadable identifiers stay empty; never synthesize disk identity.
+        for node in nodes:
+            if not isinstance(node, dict) or node.get("type") != "disk":
+                continue
+            device_name = str(node.get("name") or "")
+            if not re.fullmatch(r"[a-zA-Z0-9_.-]+", device_name):
+                continue
+            try:
+                uuid_out, uuid_rc, _ = runRet(
+                    ["blkid", "-p", "-s", "PTUUID", "-o", "value",
+                     "/dev/" + device_name],
+                    stdOutOnly=False
+                )
+                if uuid_rc == 0:
+                    node["ptuuid"] = str(uuid_out or "").strip()
+            except (OSError, ValueError):
+                # Optional blkid can be absent on a minimal installation.
+                continue
     disks = __lsblk(data.get('blockdevices', []), None, ignoreSysDisks, mounted, filterDev, filterDevIsRegex)
     disk_dict = {disk.name: disk for disk in disks if disk.fstype != 'swap'}
     return disk_dict
