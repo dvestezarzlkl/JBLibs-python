@@ -7,7 +7,7 @@ loadLng()
 
 from typing import Callable, Any, Union, List, Tuple
 import traceback
-from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC,cls, text_color, en_color
+from .term import getKey,text_inverse,text_remove_terminal_ASCII_ESC,cls, text_color, en_color, print_processing_status
 from .helper import constrain
 from time import sleep
 
@@ -159,7 +159,14 @@ class c_menu_item:
     
     clearScreenOnSelect:bool
     """Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka"""
-    
+
+    processingText:str|None
+    """Text zobrazený okamžitě po platném výběru před voláním onSelect.
+
+    None = zdědí default z c_menu.processingText, prázdný string = vypnuto.
+    Podporuje {value} a kompatibilní alias %v% pro label zvolené položky.
+    """
+
     _isTitle:bool
     """Pokud je True, tak je položka titulek - interní var pro property isTitle"""
     
@@ -268,7 +275,8 @@ class c_menu_item:
         isTitle:bool=False,
         labelJustify:str="l",
         minW:int=0,
-        clearScreenOnSelect:bool=True        
+        clearScreenOnSelect:bool=True,
+        processingText:str|None=None,
     ):
         self._isTitle=False
         self._label=""
@@ -284,7 +292,10 @@ class c_menu_item:
         self.justifyLabel=labelJustify
         self.isTitleInverse=False
         self.clearScreenOnSelect=clearScreenOnSelect
-        
+        if processingText is not None and not isinstance(processingText, str):
+            processingText=str(processingText)
+        self.processingText=processingText
+
         # settery
         self.label = label
         self.isTitle=isTitle
@@ -548,6 +559,14 @@ class c_menu:
 
     showGlobalTitle: bool = True
     """Pokud False, globální titulní kontext se pro tuto instanci nezobrazí."""
+
+    processingText: str = TXT_PROCESSING_CHOICE
+    """Výchozí okamžitá odezva před spuštěním callable menu akce.
+
+    Konkrétní c_menu_item ji může přepsat přes processingText; prázdný string
+    odezvu vypne. Submenu navigace ji nevypisuje, protože změna obrazovky je
+    sama okamžitou odezvou.
+    """
 
     menu: list[c_menu_item] = []
     """ Položky menu mohou být: 
@@ -1670,6 +1689,8 @@ class c_menu:
                     log.debug(f"onSelect '{item.label}'")
                     if isinstance(item, c_menu_item) and item.clearScreenOnSelect is True:
                         cls()
+                    processing_text = self.processingText if item.processingText is None else item.processingText
+                    print_processing_status(processing_text, item.label)
                     self.lastReturn = item.onSelect(item)
                     if self.lastReturn is False:
                         self.lastReturn = onSelReturn()

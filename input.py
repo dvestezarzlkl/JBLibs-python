@@ -3,7 +3,7 @@ from __future__ import annotations
 import bcrypt,os
 from .lng.default import * 
 from .helper import loadLng
-from .term import restoreAndClearDown,savePos,getKey,cls,reset,text_color,en_color
+from .term import restoreAndClearDown,savePos,getKey,cls,reset,text_color,en_color,print_processing_status
 loadLng()
 
 import re, getpass
@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .c_menu import c_menu_block_items
     
-__VERSION__ = "3.0.0"
+__VERSION__ = "3.1.0"
     
 confirm_choices: list[tuple[str, str]] = [
     ['y', TXT_INPUT_YES],
@@ -353,13 +353,16 @@ def anyKey(RETURN_KeyOny:bool=False, cls:bool=False,minMessageWidth:int=0) -> No
             if c is not None:
                 break     
         
-def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
+def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0, processingText:str|None=None) -> bool:
     """ Čeká na potvrzení pomocí klávesy Y nebo N
     
     Parameters:
         msg (str): zpráva která se zobrazí uživateli
         make_cls (bool): pokud je True, tak se před zobrazením smaže obrazovka
         minMessageWidth (int): minimální šířka zprávy
+        processingText (str|None): okamžitá odezva po přijatém Y/N. None použije
+            TXT_PROCESSING_CHOICE, prázdný string odezvu vypne. Podporuje
+            {value} i alias %v%.
     Returns:
         bool: True pokud bylo potvrzeno, jinak False
     
@@ -378,9 +381,11 @@ def confirm(msg: str, make_cls:bool=False,minMessageWidth:int=0) -> bool:
     
     ch = getKey(forKeys=confirm_choices[0][0]+confirm_choices[1][0])
     ch=ch.strip().lower()
-    if ch == confirm_choices[0][0].lower():
-        return True
-    return False
+    accepted = ch == confirm_choices[0][0].lower()
+    selected_label = confirm_choices[0][1] if accepted else confirm_choices[1][1]
+    progress = TXT_PROCESSING_CHOICE if processingText is None else processingText
+    print_processing_status(progress, selected_label)
+    return accepted
 
 class select_item:
     """Položka pro výběr z více možností pro funkci select
@@ -425,6 +430,7 @@ def select(
     minMessageWidth:int=0,
     title:Union[str,c_menu_block_items]=TXT_SELECT_TITLE,
     subTitle:Union[str,"c_menu_block_items"]="",
+    processingText:str|None=None,
 ) ->selectReturn:
     """Zobrazí seznam položek a čeká na výběr jedné z nich  
     POZOR, protože využívá menu, tak maže obrazovku
@@ -440,7 +446,9 @@ def select(
         minMessageWidth (int): minimální šířka zprávy
         title (Union[str,"c_menu_block_items"]): titulek menu, může být i c_menu_block_items pro víceřádkový titulek
         subTitle (Union[str,"c_menu_block_items"]): podtitulek menu, může být i c_menu_block_items pro víceřádkový podtitulek
-                
+        processingText (str|None): okamžitá odezva po přijatém výběru. None použije
+            TXT_PROCESSING_CHOICE, prázdný string ji vypne. {value}/%v% = label.
+
     Returns:
         Union[select_item,None]: vybraná položka nebo None pokud uživatel zrušil výběr
         
@@ -511,7 +519,8 @@ def select(
                 items[i].label,
                 items[i].choice,
                 lambda f: onSelReturn(endMenu=True),
-                data=items[i].data
+                data=items[i].data,
+                processingText="",
             ))
         elif items[i] is None:
             menuItems.append( None )
@@ -522,8 +531,13 @@ def select(
         
     m=c_menu(menuItems,minMessageWidth,True,False,title,subTitle)
     m.run()
+    selected = m.getLastSelItem()
+    width = m.getCalcWidth()
     reset()
-    return selectReturn(m.getLastSelItem(),m.getCalcWidth())
+    if selected is not None:
+        progress = TXT_PROCESSING_CHOICE if processingText is None else processingText
+        print_processing_status(progress, selected.label)
+    return selectReturn(selected,width)
 
 def inputCliSize(
     minSize:Union[int|str]=1,

@@ -2,7 +2,7 @@
 
 Soubor pomocných knihoven pro python, changelog viz git změny
 
-v1.2.20
+v1.2.33
 
 ## c_menu
 
@@ -36,7 +36,9 @@ Více viz komentáře v knihovně
 
 ## input
 
-Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm, select
+Základní vstupy z klávesnice, jako heslo, obecný input, anyKey, confirm, select.
+
+`c_menu` callable akce, `select()` a `confirm()` po přijetí platné volby okamžitě vypíšou stav zpracování, aby uživatel neopakoval vstup během pomalejší akce. Výchozí text používá `{value}`; podporovaný je i alias `%v%`. Prázdný `processingText=""` feedback vypne.
 
 Víc v komentářích knihovny
 
