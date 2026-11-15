@@ -29,20 +29,20 @@
     {
       "path": "c_menu.py",
       "expected": 1,
-      "old": "    clearScreenOnSelect:bool\n    \"\"\"Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka\"\"\"\n    \n    _isTitle:bool",
-      "new": "    clearScreenOnSelect:bool\n    \"\"\"Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka\"\"\"\n\n    processingText:str|None\n    \"\"\"Text zobrazený okamžitě po platném výběru před voláním onSelect.\n\n    None = zdědí default z c_menu.processingText, prázdný string = vypnuto.\n    Podporuje {value} a kompatibilní alias %v% pro label zvolené položky.\n    \"\"\"\n    \n    _isTitle:bool"
+      "old": "    clearScreenOnSelect:bool\n    \"\"\"Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka\"\"\"\n\n    _isTitle:bool",
+      "new": "    clearScreenOnSelect:bool\n    \"\"\"Pokud je True, tak se po vybrání a spuštění Callable smaže obrazovka\"\"\"\n\n    processingText:str|None\n    \"\"\"Text zobrazený okamžitě po platném výběru před voláním onSelect.\n\n    None = zdědí default z c_menu.processingText, prázdný string = vypnuto.\n    Podporuje {value} a kompatibilní alias %v% pro label zvolené položky.\n    \"\"\"\n\n    _isTitle:bool"
     },
     {
       "path": "c_menu.py",
       "expected": 1,
-      "old": "        labelJustify:str=\"l\",\n        minW:int=0,\n        clearScreenOnSelect:bool=True        \n    ):",
+      "old": "        labelJustify:str=\"l\",\n        minW:int=0,\n        clearScreenOnSelect:bool=True\n    ):",
       "new": "        labelJustify:str=\"l\",\n        minW:int=0,\n        clearScreenOnSelect:bool=True,\n        processingText:str|None=None,\n    ):"
     },
     {
       "path": "c_menu.py",
       "expected": 1,
-      "old": "        self.clearScreenOnSelect=clearScreenOnSelect\n        \n        # settery",
-      "new": "        self.clearScreenOnSelect=clearScreenOnSelect\n        if processingText is not None and not isinstance(processingText, str):\n            processingText=str(processingText)\n        self.processingText=processingText\n        \n        # settery"
+      "old": "        self.clearScreenOnSelect=clearScreenOnSelect\n\n        # settery",
+      "new": "        self.clearScreenOnSelect=clearScreenOnSelect\n        if processingText is not None and not isinstance(processingText, str):\n            processingText=str(processingText)\n        self.processingText=processingText\n\n        # settery"
     },
     {
       "path": "c_menu.py",
@@ -95,8 +95,8 @@
     {
       "path": "input.py",
       "expected": 1,
-      "old": "        subTitle (Union[str,\"c_menu_block_items\"]): podtitulek menu, může být i c_menu_block_items pro víceřádkový podtitulek\n                \n    Returns:",
-      "new": "        subTitle (Union[str,\"c_menu_block_items\"]): podtitulek menu, může být i c_menu_block_items pro víceřádkový podtitulek\n        processingText (str|None): okamžitá odezva po přijatém výběru. None použije\n            TXT_PROCESSING_CHOICE, prázdný string ji vypne. {value}/%v% = label.\n                \n    Returns:"
+      "old": "        subTitle (Union[str,\"c_menu_block_items\"]): podtitulek menu, může být i c_menu_block_items pro víceřádkový podtitulek\n\n    Returns:",
+      "new": "        subTitle (Union[str,\"c_menu_block_items\"]): podtitulek menu, může být i c_menu_block_items pro víceřádkový podtitulek\n        processingText (str|None): okamžitá odezva po přijatém výběru. None použije\n            TXT_PROCESSING_CHOICE, prázdný string ji vypne. {value}/%v% = label.\n\n    Returns:"
     },
     {
       "path": "input.py",
