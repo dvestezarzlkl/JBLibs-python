@@ -337,3 +337,33 @@ def text_color(text:str, color:en_color, removeInnerColors:bool=False, inverse:b
         suffix = "\033[39m" + suffix   # reset jen foreground barvy
 
     return f"{prefix}{text}{suffix}"
+
+
+def format_processing_message(template:str, value:object="") -> str:
+    """Format an immediate post-selection processing message.
+
+    Canonical placeholder is ``{value}``; ``%v%`` is kept as a compact alias
+    for terminal callers. ANSI sequences are stripped from the selected value.
+    A malformed custom format string must never break the action itself.
+    """
+    if not isinstance(template, str) or not template:
+        return ""
+    clean_value = text_remove_terminal_ASCII_ESC(str(value)).strip()
+    text = template.replace("%v%", clean_value)
+    try:
+        return text.format(value=clean_value)
+    except (KeyError, IndexError, ValueError):
+        return text
+
+
+def print_processing_status(template:str|None, value:object="", color:en_color=en_color.BRIGHT_CYAN) -> None:
+    """Print and flush immediate feedback after a valid user choice.
+
+    ``None`` or an empty string disables the feedback. This helper is intended
+    for non-secret choice labels/values, never passwords or credentials.
+    """
+    if not template:
+        return
+    text = format_processing_message(template, value)
+    if text:
+        print(text_color(text, color=color), flush=True)

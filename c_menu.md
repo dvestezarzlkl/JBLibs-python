@@ -22,6 +22,7 @@ Reprezentuje jednotlivou položku menu s možnostmi pro přizpůsobení.
 - `enabled (bool)`: Určuje, zda je položka dostupná k výběru. Pokud není zapnuta, je zobrazen text jako např. `/DIS/`.
 - `hidden (bool)`: Pokud je `True`, položka se skryje.
 - `atRight (str)`: Text zobrazený na pravé straně položky.
+- `processingText (str|None)`: okamžitá odezva po platném výběru před spuštěním callable `onSelect`. `None` dědí `c_menu.processingText`, prázdný string ji vypne; placeholder `{value}` nebo `%v%` obsahuje label zvolené položky.
 
 #### Metody
 
@@ -51,6 +52,7 @@ Hlavní třída menu, určená k rozšíření pro konkrétní aplikace. Menu se
 
 - `globalTitle`: Volitelný globální titulní kontext sdílený všemi instancemi `c_menu`; může být text, `c_menu_block_items` nebo callable vracející tyto hodnoty a vyhodnocuje se při každém překreslení.
 - `showGlobalTitle (bool)`: Výchozí `True`; konkrétní menu může globální kontext skrýt nastavením na `False`.
+- `processingText (str)`: výchozí text okamžité odezvy před callable akcí. Menu subclass jej může změnit nebo nastavit na `""` pro vypnutí.
 - `menu (list[c_menu_item])`: Seznam položek menu. Může být definován jako pevné položky nebo dynamicky měněn při zobrazení.
 - `title (str)`: Titulek zobrazený nahoře menu.
 - `subTitle (str)`: Podtitulek zobrazený pod titulkem.
@@ -135,3 +137,4 @@ menu.run()
 - Příkaz ESC slouží k ukončení menu nebo návratu zpět.
 - `Ctrl+C` během čekání na volbu ukončí aktuální menu čistě přes `onExitMenu` bez tracebacku; `KeyboardInterrupt` vzniklý uvnitř právě běžící akce se nezachytává, aby zůstalo zachováno její cleanup/finally chování.
 - Podpora zobrazování chybových a informačních hlášek pomocí třídy `onSelReturn`.
+- Platná callable volba okamžitě zobrazí `processingText` ještě před začátkem akce; submenu navigace se nepovažuje za dlouhou operaci a tento stav nevypisuje.

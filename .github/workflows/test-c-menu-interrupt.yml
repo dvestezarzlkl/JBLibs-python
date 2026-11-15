@@ -1,12 +1,19 @@
-name: Test c_menu interrupt handling
+name: Test terminal menu/input interaction
 
 on:
   pull_request:
     paths:
       - "c_menu.py"
       - "c_menu.md"
+      - "input.py"
+      - "term.py"
+      - "lng/default.py"
+      - "lng/cs-CZ.py"
       - "__init__.py"
+      - "Readme.md"
+      - "AGENTS.md"
       - "tests/test_c_menu_interrupt.py"
+      - "tests/test_choice_processing.py"
       - ".github/workflows/test-c-menu-interrupt.yml"
   push:
     branches:
@@ -14,8 +21,15 @@ on:
     paths:
       - "c_menu.py"
       - "c_menu.md"
+      - "input.py"
+      - "term.py"
+      - "lng/default.py"
+      - "lng/cs-CZ.py"
       - "__init__.py"
+      - "Readme.md"
+      - "AGENTS.md"
       - "tests/test_c_menu_interrupt.py"
+      - "tests/test_choice_processing.py"
       - ".github/workflows/test-c-menu-interrupt.yml"
 
 permissions:
@@ -33,14 +47,14 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install test dependency
-        run: python -m pip install psutil==6.1.0
+      - name: Install test dependencies
+        run: python -m pip install psutil==6.1.0 bcrypt
 
       - name: Prepare JBLibs log directory
         run: mkdir -p log
 
-      - name: Compile menu modules
-        run: python -m py_compile c_menu.py term.py tests/test_c_menu_interrupt.py
+      - name: Compile terminal interaction modules
+        run: python -m py_compile c_menu.py input.py term.py tests/test_c_menu_interrupt.py tests/test_choice_processing.py
 
-      - name: Run c_menu interrupt tests
-        run: python -m unittest discover -s tests -p "test_c_menu_interrupt.py" -v
+      - name: Run terminal interaction tests
+        run: python -m unittest tests.test_c_menu_interrupt tests.test_choice_processing -v
