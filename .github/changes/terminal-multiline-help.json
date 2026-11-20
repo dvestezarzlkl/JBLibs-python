@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "commit_message": "refactor(input): support multi-line terminal command help",
+  "replacements": [
+    {
+      "path": "input.py",
+      "old": "        help: Union[str, Callable[[\"terminal_context\"], str | None], None] = None,\n",
+      "new": "        help: Union[str, list[str], Callable[[\"terminal_context\"], str | list[str] | None], None] = None,\n",
+      "expected": 1
+    },
+    {
+      "path": "input.py",
+      "old": "            value = command.help(self) if callable(command.help) else command.help\n            if value is None or value == \"\":\n                continue\n            items.append(f\"{self.fnPrefix}{name}    {value}\")\n",
+      "new": "            value = command.help(self) if callable(command.help) else command.help\n            if value is None:\n                continue\n            rows = [value] if isinstance(value, str) else value\n            if not isinstance(rows, list) or not all(isinstance(row, str) for row in rows):\n                raise ValueError(f\"Help for command '{name}' must be str, list[str] or None\")\n            for row in rows:\n                row = row.strip()\n                if row:\n                    items.append(f\"{self.fnPrefix}{name} {row}\")\n                else:\n                    items.append(f\"{self.fnPrefix}{name}\")\n",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_terminal_input.py",
+      "old": "            \"help\": input_module.terminal_command(\n                lambda ctx, _args: ctx.help(),\n                \"show help\",\n            ),\n            \"info\": input_module.terminal_command(\n                info,\n                lambda _ctx: \"<name> = show profile info\",\n            ),\n",
+      "new": "            \"help\": input_module.terminal_command(\n                lambda ctx, _args: ctx.help(),\n                \"show help\",\n            ),\n            \"info\": input_module.terminal_command(\n                info,\n                lambda _ctx: [\n                    \"<name>    show profile info\",\n                    \"<name> full    show full profile info\",\n                ],\n            ),\n",
+      "expected": 1
+    },
+    {
+      "path": "tests/test_terminal_input.py",
+      "old": "            [\n                (\":help    show help\", \"\"),\n                (\":info    <name> = show profile info\", \"\"),\n            ],\n",
+      "new": "            [\n                (\":help show help\", \"\"),\n                (\":info <name>    show profile info\", \"\"),\n                (\":info <name> full    show full profile info\", \"\"),\n            ],\n",
+      "expected": 1
+    }
+  ]
+}
