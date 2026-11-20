@@ -6,7 +6,7 @@ from .helper import loadLng
 from .term import restoreAndClearDown,savePos,getKey,cls,reset,text_color,en_color,print_processing_status
 loadLng()
 
-import re, getpass
+import re, getpass, importlib
 from .c_menu import printBlock,onSelReturn
 from typing import Union,Callable,Optional
 from .format import cliSize
@@ -26,6 +26,151 @@ confirm_choices: list[tuple[str, str]] = [
 ]
 
 _minMessageWidth:int=0
+
+_terminal_histories: dict[str, list[str]] = {}
+_terminal_history_loaded: set[str] = set()
+
+def _get_terminal_readline():
+    """Return an available readline-compatible module, if any."""
+    for module_name in ("readline", "pyreadline", "pyreadline3"):
+        try:
+            return importlib.import_module(module_name)
+        except ImportError:
+            continue
+    return None
+
+def _readline_history(readline) -> list[str]:
+    if readline is None or not all(
+        hasattr(readline, attr)
+        for attr in ("get_current_history_length", "get_history_item")
+    ):
+        return []
+    return [
+        value
+        for index in range(1, readline.get_current_history_length() + 1)
+        if (value := readline.get_history_item(index)) is not None
+    ]
+
+def _set_readline_history(readline, values: list[str]) -> None:
+    if readline is None or not hasattr(readline, "clear_history"):
+        return
+    readline.clear_history()
+    if hasattr(readline, "add_history"):
+        for value in values:
+            readline.add_history(value)
+
+def _load_terminal_history(history_key: str, history_file: str | None, history_length: int) -> list[str]:
+    if history_key in _terminal_history_loaded:
+        return list(_terminal_histories.get(history_key, []))
+    values: list[str] = []
+    if history_file:
+        try:
+            values = Path(history_file).expanduser().read_text(encoding="utf-8").splitlines()
+        except (FileNotFoundError, OSError, UnicodeError):
+            values = []
+    if history_length > 0:
+        values = values[-history_length:]
+    _terminal_histories[history_key] = values
+    _terminal_history_loaded.add(history_key)
+    return list(values)
+
+def _save_terminal_history(history_key: str, values: list[str], history_file: str | None, history_length: int) -> None:
+    if history_length > 0:
+        values = values[-history_length:]
+    _terminal_histories[history_key] = list(values)
+    _terminal_history_loaded.add(history_key)
+    if not history_file:
+        return
+    path = Path(history_file).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = "\n".join(values)
+        path.write_text(text + ("\n" if text else ""), encoding="utf-8")
+    except OSError:
+        pass
+
+def terminal(
+    title: Union[str, "c_menu_block_items", list, None] = None,
+    texts: Union[str, "c_menu_block_items", list, None] = None,
+    defaultExit: str | None = "q",
+    prompt: str = f">>> {TXT_INPUT_A}: ",
+    historyKey: str = "default",
+    historyFile: str | None = None,
+    historyLength: int = 50,
+    maxLen: int = 0,
+    minMessageWidth: int = 0,
+    showExit: bool = True,
+) -> str | None:
+    """Interactive single-line console input with isolated command history."""
+    if not isinstance(historyKey, str) or not historyKey:
+        raise ValueError("Parameter historyKey must be non-empty string")
+    if defaultExit is not None and not isinstance(defaultExit, str):
+        raise ValueError("Parameter defaultExit must be string or None")
+    if not isinstance(prompt, str):
+        raise ValueError("Parameter prompt must be string")
+    if (historyLength := JBJH.is_int(historyLength)) is None or historyLength < 0:
+        raise ValueError("Parameter historyLength must be non-negative integer")
+    if (maxLen := JBJH.is_int(maxLen)) is None or maxLen < 0:
+        raise ValueError("Parameter maxLen must be non-negative integer")
+    if (minMessageWidth := JBJH.is_int(minMessageWidth)) is None or minMessageWidth < 0:
+        raise ValueError("Parameter minMessageWidth must be non-negative integer")
+    if not minMessageWidth:
+        minMessageWidth = _minMessageWidth
+
+    title_items = c_menu_block_items()
+    if title:
+        if isinstance(title, c_menu_block_items):
+            title_items = title
+        elif isinstance(title, list):
+            title_items = c_menu_block_items(title)
+        else:
+            title_items.append(str(title))
+
+    text_items = c_menu_block_items()
+    if texts:
+        if isinstance(texts, c_menu_block_items):
+            text_items = texts
+        elif isinstance(texts, list):
+            text_items = c_menu_block_items(texts)
+        else:
+            text_items.append(str(texts))
+    if showExit and defaultExit:
+        text_items.append(f"{defaultExit} = {TXT_END}")
+
+    if title_items or text_items:
+        printBlock(title_items, text_items, eof=True, min_width=minMessageWidth)
+
+    readline = _get_terminal_readline()
+    outside_history = _readline_history(readline)
+    console_history = _load_terminal_history(historyKey, historyFile, historyLength)
+    _set_readline_history(readline, console_history)
+
+    try:
+        try:
+            value = input(prompt)
+        except EOFError:
+            return None
+        value = str(value)
+        current_history = _readline_history(readline)
+        if readline is None:
+            current_history = [*console_history, value] if value else console_history
+
+        if defaultExit is not None and value.strip().lower() == defaultExit.lower():
+            if current_history and current_history[-1] == value:
+                current_history.pop()
+            _save_terminal_history(historyKey, current_history, historyFile, historyLength)
+            return None
+
+        if maxLen and len(value) > maxLen:
+            if current_history and current_history[-1] == value:
+                current_history.pop()
+            _save_terminal_history(historyKey, current_history, historyFile, historyLength)
+            return value[:maxLen]
+
+        _save_terminal_history(historyKey, current_history, historyFile, historyLength)
+        return value
+    finally:
+        _set_readline_history(readline, outside_history)
 
 def validate_port(port: Union[int,str], full:bool=False) -> bool:
     """

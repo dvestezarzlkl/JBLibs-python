@@ -20,6 +20,7 @@ if PACKAGE_NAME not in sys.modules:
 term_module = importlib.import_module(f"{PACKAGE_NAME}.term")
 c_menu_module = importlib.import_module(f"{PACKAGE_NAME}.c_menu")
 input_module = importlib.import_module(f"{PACKAGE_NAME}.input")
+from .test_terminal_input import TerminalInputTests
 
 
 class ProcessingMessageTests(unittest.TestCase):

@@ -14,6 +14,7 @@ import re
 import sys
 import time
 from typing import Any, Sequence
+from .input import terminal
 
 try:
     import serial
@@ -300,9 +301,16 @@ def transmitter_mode(ser: Any, use_history: bool = True) -> None:
 
     header(ser)
     while True:
-        try:
-            line = input("> ")
-        except EOFError:
+        line = terminal(
+            None,
+            defaultExit="exit",
+            prompt="> ",
+            historyKey="uart-transmitter",
+            historyFile=HISTORY_FILE if use_history else None,
+            historyLength=50,
+            showExit=False,
+        )
+        if line is None:
             break
 
         command = line.strip().lower()
