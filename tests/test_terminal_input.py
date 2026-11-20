@@ -128,11 +128,11 @@ class TerminalInputTests(unittest.TestCase):
         commands = {
             "help": input_module.terminal_command(
                 lambda ctx, _args: ctx.help(),
-                "{prefix}help = help",
+                "show help",
             ),
             "info": input_module.terminal_command(
                 info,
-                lambda ctx: f"{ctx.fnPrefix}info <name> = info",
+                lambda _ctx: "<name> = show profile info",
             ),
         }
 
@@ -157,7 +157,7 @@ class TerminalInputTests(unittest.TestCase):
         ctx.fnPrefix = ":"
         self.assertEqual(
             list(ctx.help()),
-            [":help = help", ":info <name> = info"],
+            [":help    show help", ":info    <name> = show profile info"],
         )
 
     def test_structured_blocks_are_rendered_and_history_file_is_written(self):

@@ -95,7 +95,7 @@ class terminal_command:
     def __init__(
         self,
         fn: Callable[["terminal_context", str], object],
-        help: Union[str, "c_menu_block_items", list, Callable[["terminal_context"], object], None] = None,
+        help: Union[str, Callable[["terminal_context"], str | None], None] = None,
         hidden: bool = False,
     ):
         if not callable(fn):
@@ -129,14 +129,7 @@ class terminal_context:
             value = command.help(self) if callable(command.help) else command.help
             if value is None or value == "":
                 continue
-            if isinstance(value, c_menu_block_items):
-                for item in value:
-                    items.append(item)
-            elif isinstance(value, list):
-                for item in c_menu_block_items(value):
-                    items.append(item)
-            else:
-                items.append(str(value).format(prefix=self.fnPrefix, command=name))
+            items.append(f"{self.fnPrefix}{name}    {value}")
         return items
 
 
