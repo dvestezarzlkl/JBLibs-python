@@ -45,17 +45,10 @@
       "expected": 1
     },
     {
-      "path": ".github/workflows/test-c-menu-interrupt.yml",
-      "old": "      - \"tests/test_choice_processing.py\"\n      - \".github/workflows/test-c-menu-interrupt.yml\"",
-      "new": "      - \"tests/test_choice_processing.py\"\n      - \"tests/test_terminal_input.py\"\n      - \"uart_tester.py\"\n      - \".github/workflows/test-c-menu-interrupt.yml\"",
-      "expected": 2
-    },
-    {
-      "path": ".github/workflows/test-c-menu-interrupt.yml",
-      "old": "      - name: Compile terminal interaction modules\n        run: python -m py_compile c_menu.py input.py term.py tests/test_c_menu_interrupt.py tests/test_choice_processing.py\n\n      - name: Run terminal interaction tests\n        run: python -m unittest tests.test_c_menu_interrupt tests.test_choice_processing -v\n",
-      "new": "      - name: Compile terminal interaction modules\n        run: python -m py_compile c_menu.py input.py term.py uart_tester.py tests/test_c_menu_interrupt.py tests/test_choice_processing.py tests/test_terminal_input.py\n\n      - name: Run terminal interaction tests\n        run: python -m unittest tests.test_c_menu_interrupt tests.test_choice_processing tests.test_terminal_input -v\n",
+      "path": "tests/test_choice_processing.py",
+      "old": "input_module = importlib.import_module(f\"{PACKAGE_NAME}.input\")\n",
+      "new": "input_module = importlib.import_module(f\"{PACKAGE_NAME}.input\")\nfrom .test_terminal_input import TerminalInputTests\n",
       "expected": 1
     }
-  ],
-  "note": "trigger apply workflow"
+  ]
 }
