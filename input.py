@@ -89,6 +89,24 @@ def _save_terminal_history(history_key: str, values: list[str], history_file: st
     except OSError:
         pass
 
+class terminal_command:
+    """Declarative terminal dispatcher item."""
+
+    def __init__(
+        self,
+        fn: Callable[["terminal_context", str], object],
+        help: Union[str, "c_menu_block_items", list, Callable[["terminal_context"], object], None] = None,
+        hidden: bool = False,
+    ):
+        if not callable(fn):
+            raise ValueError("Parameter fn must be callable")
+        if not isinstance(hidden, bool):
+            raise ValueError("Parameter hidden must be bool")
+        self.fn = fn
+        self.help = help
+        self.hidden = hidden
+
+
 class terminal_context:
     """Runtime context passed to terminal renderers and command handlers."""
 
@@ -99,6 +117,27 @@ class terminal_context:
         self.args: str = ""
         self.result: Any = None
         self.history: list[str] = []
+        self.commands: dict[str, terminal_command] = {}
+        self.fnPrefix: str = ":"
+
+    def help(self) -> "c_menu_block_items":
+        """Build dynamic help rows from the active command dispatcher."""
+        items = c_menu_block_items()
+        for name, command in self.commands.items():
+            if command.hidden or command.help is None:
+                continue
+            value = command.help(self) if callable(command.help) else command.help
+            if value is None or value == "":
+                continue
+            if isinstance(value, c_menu_block_items):
+                for item in value:
+                    items.append(item)
+            elif isinstance(value, list):
+                for item in c_menu_block_items(value):
+                    items.append(item)
+            else:
+                items.append(str(value).format(prefix=self.fnPrefix, command=name))
+        return items
 
 
 def terminal(
@@ -108,7 +147,7 @@ def terminal(
     defaultExit: str | None = "q",
     prompt: str = f">>> {TXT_INPUT_A}: ",
     fnPrefix: str = ":",
-    commands: dict[str, Callable[[terminal_context, str], object]] | None = None,
+    commands: dict[str, Union[terminal_command, Callable[[terminal_context, str], object]]] | None = None,
     context: Any = None,
     historyKey: str = "default",
     historyFile: str | None = None,
@@ -122,7 +161,8 @@ def terminal(
 
     header/footer accept str, list, c_menu_block_items or callable(ctx).
     title is intentionally static: str or one c_menu_item (its label is used).
-    commands are matched after fnPrefix; handlers receive (ctx, args).
+    commands are matched after fnPrefix. Values may be terminal_command or a
+    callable(ctx, args); terminal_command adds dynamic help metadata.
     context is exposed as ctx.owner.
     """
     if not isinstance(historyKey, str) or not historyKey:
@@ -146,7 +186,20 @@ def terminal(
     if not minMessageWidth:
         minMessageWidth = _minMessageWidth
 
+    normalized_commands: dict[str, terminal_command] = {}
+    for name, command in (commands or {}).items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Command names must be non-empty strings")
+        if isinstance(command, terminal_command):
+            normalized_commands[name] = command
+        elif callable(command):
+            normalized_commands[name] = terminal_command(command)
+        else:
+            raise ValueError(f"Command '{name}' must be terminal_command or callable")
+
     ctx = context if isinstance(context, terminal_context) else terminal_context(context)
+    ctx.commands = normalized_commands
+    ctx.fnPrefix = fnPrefix
 
     def resolve(value):
         return value(ctx) if callable(value) else value
@@ -226,11 +279,11 @@ def terminal(
             _save_terminal_history(historyKey, console_history, historyFile, historyLength)
 
             stripped = value.strip()
-            if fnPrefix and commands and stripped.startswith(fnPrefix):
+            if fnPrefix and normalized_commands and stripped.startswith(fnPrefix):
                 command_line = stripped[len(fnPrefix):].strip()
                 lowered = command_line.lower()
                 match = None
-                for name in sorted(commands, key=len, reverse=True):
+                for name in sorted(normalized_commands, key=len, reverse=True):
                     key = name.strip().lower()
                     if lowered == key or lowered.startswith(key + " "):
                         match = name
@@ -239,7 +292,7 @@ def terminal(
                     key = match.strip()
                     ctx.command = key
                     ctx.args = command_line[len(key):].strip()
-                    ctx.result = commands[match](ctx, ctx.args)
+                    ctx.result = normalized_commands[match].fn(ctx, ctx.args)
                     render(ctx.result)
                     continue
 

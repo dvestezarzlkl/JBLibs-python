@@ -1,6 +1,6 @@
 __version__ = "1.2.34"
 
-# 1.2.34: shared terminal() command console with dynamic header/footer context callbacks, static title, prefix dispatch and isolated history
+# 1.2.34: shared terminal() command console with dynamic header/footer, static title, context callbacks, declarative prefix dispatch/help and isolated history
 # 1.2.33: c_menu/select/confirm immediately acknowledge accepted choices before processing
 # 1.2.32: SSH user discovery ignores /home folders without matching system accounts
 # 1.2.31: SFTP fixes group removal, managed Samba credentials/init retry and validates sshd config before restart

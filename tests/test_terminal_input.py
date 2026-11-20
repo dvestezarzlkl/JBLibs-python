@@ -60,7 +60,7 @@ class TerminalInputTests(unittest.TestCase):
         ):
             self.assertEqual(
                 input_module.terminal(
-                    None,
+                    header=None,
                     defaultExit="q",
                     historyKey="ufw",
                     prompt="> ",
@@ -83,7 +83,7 @@ class TerminalInputTests(unittest.TestCase):
         ):
             self.assertEqual(
                 input_module.terminal(
-                    None,
+                    header=None,
                     defaultExit="q",
                     historyKey="ufw",
                     prompt="> ",
@@ -108,7 +108,7 @@ class TerminalInputTests(unittest.TestCase):
         ):
             self.assertIsNone(
                 input_module.terminal(
-                    None,
+                    header=None,
                     defaultExit="q",
                     historyKey="ufw",
                     showExit=False,
@@ -117,11 +117,54 @@ class TerminalInputTests(unittest.TestCase):
 
         self.assertEqual(input_module._terminal_histories["ufw"], [])
 
+    def test_dispatcher_passes_context_args_and_builds_dynamic_help(self):
+        owner = object()
+        seen = []
+
+        def info(ctx, args):
+            seen.append((ctx.owner, args))
+            return "INFO " + args
+
+        commands = {
+            "help": input_module.terminal_command(
+                lambda ctx, _args: ctx.help(),
+                "{prefix}help = help",
+            ),
+            "info": input_module.terminal_command(
+                info,
+                lambda ctx: f"{ctx.fnPrefix}info <name> = info",
+            ),
+        }
+
+        with (
+            patch.object(input_module, "_get_terminal_readline", return_value=None),
+            patch.object(input_module, "printBlock"),
+            patch.object(input_module, "cls"),
+            patch("builtins.input", side_effect=[":info Apache Full", "q"]),
+        ):
+            result = input_module.terminal(
+                title="Demo",
+                commands=commands,
+                context=owner,
+                historyKey="dispatch-test",
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(seen, [(owner, "Apache Full")])
+
+        ctx = input_module.terminal_context(owner)
+        ctx.commands = commands
+        ctx.fnPrefix = ":"
+        self.assertEqual(
+            list(ctx.help()),
+            [":help = help", ":info <name> = info"],
+        )
+
     def test_structured_blocks_are_rendered_and_history_file_is_written(self):
-        title = c_menu_module.c_menu_block_items()
-        title.append(("Console", "c"))
-        texts = c_menu_module.c_menu_block_items()
-        texts.append(("State", "ready"))
+        header = c_menu_module.c_menu_block_items()
+        header.append(("Console", "c"))
+        footer = c_menu_module.c_menu_block_items()
+        footer.append(("State", "ready"))
 
         with TemporaryDirectory() as tmp:
             history_file = str(Path(tmp) / "history.txt")
@@ -132,8 +175,9 @@ class TerminalInputTests(unittest.TestCase):
             ):
                 self.assertEqual(
                     input_module.terminal(
-                        title,
-                        texts,
+                        header=header,
+                        title="Demo",
+                        footer=footer,
                         defaultExit="q",
                         historyKey="demo",
                         historyFile=history_file,
