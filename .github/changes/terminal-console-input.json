@@ -56,5 +56,6 @@
       "new": "      - name: Compile terminal interaction modules\n        run: python -m py_compile c_menu.py input.py term.py uart_tester.py tests/test_c_menu_interrupt.py tests/test_choice_processing.py tests/test_terminal_input.py\n\n      - name: Run terminal interaction tests\n        run: python -m unittest tests.test_c_menu_interrupt tests.test_choice_processing tests.test_terminal_input -v\n",
       "expected": 1
     }
-  ]
+  ],
+  "note": "trigger apply workflow"
 }
