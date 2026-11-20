@@ -95,7 +95,7 @@ class terminal_command:
     def __init__(
         self,
         fn: Callable[["terminal_context", str], object],
-        help: Union[str, Callable[["terminal_context"], str | None], None] = None,
+        help: Union[str, list[str], Callable[["terminal_context"], str | list[str] | None], None] = None,
         hidden: bool = False,
     ):
         if not callable(fn):
@@ -127,9 +127,17 @@ class terminal_context:
             if command.hidden or command.help is None:
                 continue
             value = command.help(self) if callable(command.help) else command.help
-            if value is None or value == "":
+            if value is None:
                 continue
-            items.append(f"{self.fnPrefix}{name}    {value}")
+            rows = [value] if isinstance(value, str) else value
+            if not isinstance(rows, list) or not all(isinstance(row, str) for row in rows):
+                raise ValueError(f"Help for command '{name}' must be str, list[str] or None")
+            for row in rows:
+                row = row.strip()
+                if row:
+                    items.append(f"{self.fnPrefix}{name} {row}")
+                else:
+                    items.append(f"{self.fnPrefix}{name}")
         return items
 
 

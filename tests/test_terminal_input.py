@@ -132,7 +132,10 @@ class TerminalInputTests(unittest.TestCase):
             ),
             "info": input_module.terminal_command(
                 info,
-                lambda _ctx: "<name> = show profile info",
+                lambda _ctx: [
+                    "<name>    show profile info",
+                    "<name> full    show full profile info",
+                ],
             ),
         }
 
@@ -158,8 +161,9 @@ class TerminalInputTests(unittest.TestCase):
         self.assertEqual(
             list(ctx.help()),
             [
-                (":help    show help", ""),
-                (":info    <name> = show profile info", ""),
+                (":help show help", ""),
+                (":info <name>    show profile info", ""),
+                (":info <name> full    show full profile info", ""),
             ],
         )
 
