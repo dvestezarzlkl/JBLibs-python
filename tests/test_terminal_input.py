@@ -197,6 +197,6 @@ class TerminalInputTests(unittest.TestCase):
             self.assertEqual(Path(history_file).read_text(encoding="utf-8"), "show\n")
 
 
-# CI trigger after manifest-applied bot commit; keep branch tests on a user-authored head.
+# CI trigger after manifest-applied bot commit; keep branch tests on a user-authored head. Multiline help verified.
 if __name__ == "__main__":
     unittest.main()
