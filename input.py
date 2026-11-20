@@ -90,24 +90,38 @@ def _save_terminal_history(history_key: str, values: list[str], history_file: st
         pass
 
 def terminal(
-    title: Union[str, "c_menu_block_items", list, None] = None,
-    texts: Union[str, "c_menu_block_items", list, None] = None,
+    header: Union[str, "c_menu_block_items", list, Callable, None] = None,
+    title: Union[str, "c_menu_block_items", list, Callable, None] = None,
+    footer: Union[str, "c_menu_block_items", list, Callable, None] = None,
     defaultExit: str | None = "q",
     prompt: str = f">>> {TXT_INPUT_A}: ",
+    fnPrefix: str = ":",
+    commands: dict[str, Callable[[str], object]] | None = None,
     historyKey: str = "default",
     historyFile: str | None = None,
     historyLength: int = 50,
     maxLen: int = 0,
     minMessageWidth: int = 0,
     showExit: bool = True,
+    clearScreen: bool = True,
 ) -> str | None:
-    """Interactive single-line console input with isolated command history."""
+    """Interactive command-console input with isolated history.
+
+    header, title and footer accept str, list, c_menu_block_items or a
+    zero-argument callable returning one of those types. Prefix commands are
+    dispatched internally; handlers receive the unparsed remainder after the
+    command name and may return renderable content.
+    """
     if not isinstance(historyKey, str) or not historyKey:
         raise ValueError("Parameter historyKey must be non-empty string")
     if defaultExit is not None and not isinstance(defaultExit, str):
         raise ValueError("Parameter defaultExit must be string or None")
     if not isinstance(prompt, str):
         raise ValueError("Parameter prompt must be string")
+    if not isinstance(fnPrefix, str):
+        raise ValueError("Parameter fnPrefix must be string")
+    if commands is not None and not isinstance(commands, dict):
+        raise ValueError("Parameter commands must be dict or None")
     if (historyLength := JBJH.is_int(historyLength)) is None or historyLength < 0:
         raise ValueError("Parameter historyLength must be non-negative integer")
     if (maxLen := JBJH.is_int(maxLen)) is None or maxLen < 0:
@@ -117,28 +131,33 @@ def terminal(
     if not minMessageWidth:
         minMessageWidth = _minMessageWidth
 
-    title_items = c_menu_block_items()
-    if title:
-        if isinstance(title, c_menu_block_items):
-            title_items = title
-        elif isinstance(title, list):
-            title_items = c_menu_block_items(title)
-        else:
-            title_items.append(str(title))
+    def resolve(value):
+        return value() if callable(value) else value
 
-    text_items = c_menu_block_items()
-    if texts:
-        if isinstance(texts, c_menu_block_items):
-            text_items = texts
-        elif isinstance(texts, list):
-            text_items = c_menu_block_items(texts)
-        else:
-            text_items.append(str(texts))
-    if showExit and defaultExit:
-        text_items.append(f"{defaultExit} = {TXT_END}")
+    def as_items(value) -> "c_menu_block_items":
+        value = resolve(value)
+        if isinstance(value, c_menu_block_items):
+            return value
+        items = c_menu_block_items()
+        if value is None or value == "":
+            return items
+        if isinstance(value, list):
+            return c_menu_block_items(value)
+        items.append(str(value))
+        return items
 
-    if title_items or text_items:
-        printBlock(title_items, text_items, eof=True, min_width=minMessageWidth)
+    def render(middle=None) -> None:
+        if clearScreen:
+            cls()
+        header_items = as_items(header)
+        body_items = as_items(title if middle is None else middle)
+        footer_items = as_items(footer)
+        if showExit and defaultExit:
+            footer_items.append(f"{defaultExit} = {TXT_END}")
+        for item in footer_items:
+            body_items.append(item)
+        if header_items or body_items:
+            printBlock(header_items, body_items, eof=True, min_width=minMessageWidth)
 
     readline = _get_terminal_readline()
     outside_history = _readline_history(readline)
@@ -146,29 +165,50 @@ def terminal(
     _set_readline_history(readline, console_history)
 
     try:
-        try:
-            value = input(prompt)
-        except EOFError:
-            return None
-        value = str(value)
-        current_history = _readline_history(readline)
-        if readline is None:
-            current_history = [*console_history, value] if value else console_history
+        render()
+        while True:
+            try:
+                value = str(input(prompt))
+            except EOFError:
+                return None
 
-        if defaultExit is not None and value.strip().lower() == defaultExit.lower():
-            if current_history and current_history[-1] == value:
-                current_history.pop()
-            _save_terminal_history(historyKey, current_history, historyFile, historyLength)
-            return None
+            current_history = _readline_history(readline)
+            if readline is None:
+                current_history = [*console_history, value] if value else console_history
+            console_history = list(current_history)
 
-        if maxLen and len(value) > maxLen:
-            if current_history and current_history[-1] == value:
-                current_history.pop()
-            _save_terminal_history(historyKey, current_history, historyFile, historyLength)
-            return value[:maxLen]
+            if defaultExit is not None and value.strip().lower() == defaultExit.lower():
+                if console_history and console_history[-1] == value:
+                    console_history.pop()
+                _save_terminal_history(historyKey, console_history, historyFile, historyLength)
+                return None
 
-        _save_terminal_history(historyKey, current_history, historyFile, historyLength)
-        return value
+            if maxLen and len(value) > maxLen:
+                if console_history and console_history[-1] == value:
+                    console_history.pop()
+                _save_terminal_history(historyKey, console_history, historyFile, historyLength)
+                value = value[:maxLen]
+
+            _save_terminal_history(historyKey, console_history, historyFile, historyLength)
+
+            stripped = value.strip()
+            if fnPrefix and commands and stripped.startswith(fnPrefix):
+                command_line = stripped[len(fnPrefix):].strip()
+                lowered = command_line.lower()
+                match = None
+                for name in sorted(commands, key=len, reverse=True):
+                    key = name.strip().lower()
+                    if lowered == key or lowered.startswith(key + " "):
+                        match = name
+                        break
+                if match is not None:
+                    key = match.strip()
+                    args = command_line[len(key):].strip()
+                    result = commands[match](args)
+                    render(result)
+                    continue
+
+            return value
     finally:
         _set_readline_history(readline, outside_history)
 
