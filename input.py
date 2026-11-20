@@ -6,9 +6,9 @@ from .helper import loadLng
 from .term import restoreAndClearDown,savePos,getKey,cls,reset,text_color,en_color,print_processing_status
 loadLng()
 
-import re, getpass
-from .c_menu import printBlock,onSelReturn
-from typing import Union,Callable,Optional
+import re, getpass, importlib
+from .c_menu import printBlock,onSelReturn,c_menu_block_items,c_menu_item
+from typing import Union,Callable,Optional,Any
 from .format import cliSize
 from pathlib import Path
 from .fs_helper import fs_menu,e_fs_menu_select,c_fs_itm
@@ -26,6 +26,283 @@ confirm_choices: list[tuple[str, str]] = [
 ]
 
 _minMessageWidth:int=0
+
+_terminal_histories: dict[str, list[str]] = {}
+_terminal_history_loaded: set[str] = set()
+
+def _get_terminal_readline():
+    """Return an available readline-compatible module, if any."""
+    for module_name in ("readline", "pyreadline", "pyreadline3"):
+        try:
+            return importlib.import_module(module_name)
+        except ImportError:
+            continue
+    return None
+
+def _readline_history(readline) -> list[str]:
+    if readline is None or not all(
+        hasattr(readline, attr)
+        for attr in ("get_current_history_length", "get_history_item")
+    ):
+        return []
+    return [
+        value
+        for index in range(1, readline.get_current_history_length() + 1)
+        if (value := readline.get_history_item(index)) is not None
+    ]
+
+def _set_readline_history(readline, values: list[str]) -> None:
+    if readline is None or not hasattr(readline, "clear_history"):
+        return
+    readline.clear_history()
+    if hasattr(readline, "add_history"):
+        for value in values:
+            readline.add_history(value)
+
+def _load_terminal_history(history_key: str, history_file: str | None, history_length: int) -> list[str]:
+    if history_key in _terminal_history_loaded:
+        return list(_terminal_histories.get(history_key, []))
+    values: list[str] = []
+    if history_file:
+        try:
+            values = Path(history_file).expanduser().read_text(encoding="utf-8").splitlines()
+        except (FileNotFoundError, OSError, UnicodeError):
+            values = []
+    if history_length > 0:
+        values = values[-history_length:]
+    _terminal_histories[history_key] = values
+    _terminal_history_loaded.add(history_key)
+    return list(values)
+
+def _save_terminal_history(history_key: str, values: list[str], history_file: str | None, history_length: int) -> None:
+    if history_length > 0:
+        values = values[-history_length:]
+    _terminal_histories[history_key] = list(values)
+    _terminal_history_loaded.add(history_key)
+    if not history_file:
+        return
+    path = Path(history_file).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = "\n".join(values)
+        path.write_text(text + ("\n" if text else ""), encoding="utf-8")
+    except OSError:
+        pass
+
+class terminal_command:
+    """Declarative terminal dispatcher item."""
+
+    def __init__(
+        self,
+        fn: Callable[["terminal_context", str], object],
+        help: Union[str, list[str], Callable[["terminal_context"], str | list[str] | None], None] = None,
+        hidden: bool = False,
+    ):
+        if not callable(fn):
+            raise ValueError("Parameter fn must be callable")
+        if not isinstance(hidden, bool):
+            raise ValueError("Parameter hidden must be bool")
+        self.fn = fn
+        self.help = help
+        self.hidden = hidden
+
+
+class terminal_context:
+    """Runtime context passed to terminal renderers and command handlers."""
+
+    def __init__(self, owner: Any = None):
+        self.owner: Any = owner
+        self.lastInput: str = ""
+        self.command: str = ""
+        self.args: str = ""
+        self.result: Any = None
+        self.history: list[str] = []
+        self.commands: dict[str, terminal_command] = {}
+        self.fnPrefix: str = ":"
+
+    def help(self) -> "c_menu_block_items":
+        """Build dynamic help rows from the active command dispatcher."""
+        items = c_menu_block_items()
+        for name, command in self.commands.items():
+            if command.hidden or command.help is None:
+                continue
+            value = command.help(self) if callable(command.help) else command.help
+            if value is None:
+                continue
+            rows = [value] if isinstance(value, str) else value
+            if not isinstance(rows, list) or not all(isinstance(row, str) for row in rows):
+                raise ValueError(f"Help for command '{name}' must be str, list[str] or None")
+            for row in rows:
+                row = row.strip()
+                if row:
+                    items.append(f"{self.fnPrefix}{name} {row}")
+                else:
+                    items.append(f"{self.fnPrefix}{name}")
+        return items
+
+
+def terminal(
+    header: Union[str, "c_menu_block_items", list, Callable[[terminal_context], object], None] = None,
+    title: Union[str, "c_menu_item", None] = None,
+    footer: Union[str, "c_menu_block_items", list, Callable[[terminal_context], object], None] = None,
+    defaultExit: str | None = "q",
+    prompt: str = f">>> {TXT_INPUT_A}: ",
+    fnPrefix: str = ":",
+    commands: dict[str, Union[terminal_command, Callable[[terminal_context, str], object]]] | None = None,
+    context: Any = None,
+    historyKey: str = "default",
+    historyFile: str | None = None,
+    historyLength: int = 50,
+    maxLen: int = 0,
+    minMessageWidth: int = 0,
+    showExit: bool = True,
+    clearScreen: bool = True,
+) -> str | None:
+    """Interactive command console with isolated readline history.
+
+    header/footer accept str, list, c_menu_block_items or callable(ctx).
+    title is intentionally static: str or one c_menu_item (its label is used).
+    commands are matched after fnPrefix. Values may be terminal_command or a
+    callable(ctx, args); terminal_command adds dynamic help metadata.
+    context is exposed as ctx.owner.
+    """
+    if not isinstance(historyKey, str) or not historyKey:
+        raise ValueError("Parameter historyKey must be non-empty string")
+    if defaultExit is not None and not isinstance(defaultExit, str):
+        raise ValueError("Parameter defaultExit must be string or None")
+    if not isinstance(prompt, str):
+        raise ValueError("Parameter prompt must be string")
+    if not isinstance(fnPrefix, str):
+        raise ValueError("Parameter fnPrefix must be string")
+    if commands is not None and not isinstance(commands, dict):
+        raise ValueError("Parameter commands must be dict or None")
+    if title is not None and not isinstance(title, (str, c_menu_item)):
+        raise ValueError("Parameter title must be str, c_menu_item or None")
+    if (historyLength := JBJH.is_int(historyLength)) is None or historyLength < 0:
+        raise ValueError("Parameter historyLength must be non-negative integer")
+    if (maxLen := JBJH.is_int(maxLen)) is None or maxLen < 0:
+        raise ValueError("Parameter maxLen must be non-negative integer")
+    if (minMessageWidth := JBJH.is_int(minMessageWidth)) is None or minMessageWidth < 0:
+        raise ValueError("Parameter minMessageWidth must be non-negative integer")
+    if not minMessageWidth:
+        minMessageWidth = _minMessageWidth
+
+    normalized_commands: dict[str, terminal_command] = {}
+    for name, command in (commands or {}).items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Command names must be non-empty strings")
+        if isinstance(command, terminal_command):
+            normalized_commands[name] = command
+        elif callable(command):
+            normalized_commands[name] = terminal_command(command)
+        else:
+            raise ValueError(f"Command '{name}' must be terminal_command or callable")
+
+    ctx = context if isinstance(context, terminal_context) else terminal_context(context)
+    ctx.commands = normalized_commands
+    ctx.fnPrefix = fnPrefix
+
+    def resolve(value):
+        return value(ctx) if callable(value) else value
+
+    def as_items(value) -> "c_menu_block_items":
+        value = resolve(value)
+        if isinstance(value, c_menu_block_items):
+            return value
+        items = c_menu_block_items()
+        if value is None or value == "":
+            return items
+        if isinstance(value, list):
+            return c_menu_block_items(value)
+        items.append(str(value))
+        return items
+
+    def title_items() -> "c_menu_block_items":
+        items = c_menu_block_items()
+        if isinstance(title, c_menu_item):
+            items.append(title.label)
+        elif title:
+            items.append(title)
+        return items
+
+    def render(middle=None) -> None:
+        if clearScreen:
+            cls()
+        header_items = as_items(header)
+        body_items = title_items()
+        if middle is not None:
+            for item in as_items(middle):
+                body_items.append(item)
+        footer_items = as_items(footer)
+        if showExit and defaultExit:
+            footer_items.append(f"{defaultExit} = {TXT_END}")
+        for item in footer_items:
+            body_items.append(item)
+        if header_items or body_items:
+            printBlock(header_items, body_items, eof=True, min_width=minMessageWidth)
+
+    readline = _get_terminal_readline()
+    outside_history = _readline_history(readline)
+    console_history = _load_terminal_history(historyKey, historyFile, historyLength)
+    ctx.history = list(console_history)
+    _set_readline_history(readline, console_history)
+
+    try:
+        render()
+        while True:
+            try:
+                value = str(input(prompt))
+            except EOFError:
+                return None
+
+            ctx.lastInput = value
+            current_history = _readline_history(readline)
+            if readline is None:
+                current_history = [*console_history, value] if value else console_history
+            console_history = list(current_history)
+            ctx.history = list(console_history)
+
+            if defaultExit is not None and value.strip().lower() == defaultExit.lower():
+                if console_history and console_history[-1] == value:
+                    console_history.pop()
+                ctx.history = list(console_history)
+                _save_terminal_history(historyKey, console_history, historyFile, historyLength)
+                return None
+
+            if maxLen and len(value) > maxLen:
+                if console_history and console_history[-1] == value:
+                    console_history.pop()
+                ctx.history = list(console_history)
+                _save_terminal_history(historyKey, console_history, historyFile, historyLength)
+                value = value[:maxLen]
+                ctx.lastInput = value
+
+            _save_terminal_history(historyKey, console_history, historyFile, historyLength)
+
+            stripped = value.strip()
+            if fnPrefix and normalized_commands and stripped.startswith(fnPrefix):
+                command_line = stripped[len(fnPrefix):].strip()
+                lowered = command_line.lower()
+                match = None
+                for name in sorted(normalized_commands, key=len, reverse=True):
+                    key = name.strip().lower()
+                    if lowered == key or lowered.startswith(key + " "):
+                        match = name
+                        break
+                if match is not None:
+                    key = match.strip()
+                    ctx.command = key
+                    ctx.args = command_line[len(key):].strip()
+                    ctx.result = normalized_commands[match].fn(ctx, ctx.args)
+                    render(ctx.result)
+                    continue
+
+            ctx.command = ""
+            ctx.args = ""
+            ctx.result = None
+            return value
+    finally:
+        _set_readline_history(readline, outside_history)
 
 def validate_port(port: Union[int,str], full:bool=False) -> bool:
     """
