@@ -157,7 +157,10 @@ class TerminalInputTests(unittest.TestCase):
         ctx.fnPrefix = ":"
         self.assertEqual(
             list(ctx.help()),
-            [":help    show help", ":info    <name> = show profile info"],
+            [
+                (":help    show help", ""),
+                (":info    <name> = show profile info", ""),
+            ],
         )
 
     def test_structured_blocks_are_rendered_and_history_file_is_written(self):
