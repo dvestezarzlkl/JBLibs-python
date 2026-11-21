@@ -2,7 +2,7 @@
 
 Soubor pomocných knihoven pro python, changelog viz git změny
 
-v1.2.34
+v1.2.35
 
 ## c_menu
 
@@ -45,6 +45,8 @@ Víc v komentářích knihovny
 ## fs_utils
 
 `lsblkDiskInfo.isSystemDisk` rozpoznává systémovou partition i její rodičovský disk podle child stromu a mountpointů `/`, `/boot` nebo `/boot/efi`.
+
+`lsblk_list_disks()` podporuje také starší util-linux bez sloupců `MOUNTPOINTS` nebo `PTUUID`; singular `MOUNTPOINT` normalizuje a chybějící whole-disk PTUUID read-only doplní přes `blkid`.
 
 ## fs_helper
 
