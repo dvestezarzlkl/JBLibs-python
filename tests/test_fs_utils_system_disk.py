@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib
 import sys
 import types
+import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +86,59 @@ class SystemDiskDetectionTests(unittest.TestCase):
         disk = device("sdb", children=[data])
 
         self.assertFalse(disk.isSystemDisk)
+
+    def test_legacy_lsblk_without_mountpoints_or_ptuuid_falls_back_to_blkid(self):
+        payload = {
+            "blockdevices": [
+                {
+                    "name": "sdb",
+                    "label": "",
+                    "size": 4096,
+                    "type": "disk",
+                    "fstype": "",
+                    "uuid": "",
+                    "partuuid": "",
+                    "mountpoint": None,
+                    "children": [
+                        {
+                            "name": "sdb1",
+                            "label": "",
+                            "size": 4096,
+                            "type": "part",
+                            "fstype": "ext4",
+                            "uuid": "fs-uuid",
+                            "partuuid": "part-uuid",
+                            "mountpoint": "/mnt/data",
+                        }
+                    ],
+                }
+            ]
+        }
+        calls = []
+
+        def fake_run_ret(args, stdOutOnly=False):
+            calls.append(list(args))
+            if args[0] == "lsblk":
+                columns = args[-1]
+                if "MOUNTPOINTS" in columns:
+                    return "", 1, "lsblk: unknown column: MOUNTPOINTS"
+                if "PTUUID" in columns:
+                    return "", 1, "lsblk: unknown column: PTUUID"
+                return json.dumps(payload), 0, ""
+            if args[0] == "blkid":
+                self.assertEqual(args[-1], "/dev/sdb")
+                return "abcd-1234\n", 0, ""
+            raise AssertionError(args)
+
+        with patch.object(fs_utils, "runRet", side_effect=fake_run_ret):
+            disks = fs_utils.lsblk_list_disks(ignoreSysDisks=False)
+
+        self.assertEqual(list(disks), ["sdb"])
+        self.assertEqual(disks["sdb"].ptuuid, "abcd-1234")
+        self.assertEqual(disks["sdb"].children[0].ptuuid, "abcd-1234")
+        self.assertEqual(disks["sdb"].children[0].mountpoints, ["/mnt/data"])
+        self.assertEqual(sum(call[0] == "lsblk" for call in calls), 3)
+        self.assertTrue(any(call[0] == "blkid" for call in calls))
 
     def test_ignore_system_disks_removes_complete_parent(self):
         nodes = [

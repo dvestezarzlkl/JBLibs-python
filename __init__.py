@@ -1,5 +1,6 @@
-__version__ = "1.2.34"
+__version__ = "1.2.35"
 
+# 1.2.35: fs_utils supports legacy lsblk without MOUNTPOINTS/PTUUID and backfills PTUUID through blkid
 # 1.2.34: shared terminal() command console with dynamic header/footer, static title, context callbacks, declarative prefix dispatch/help and isolated history
 # 1.2.33: c_menu/select/confirm immediately acknowledge accepted choices before processing
 # 1.2.32: SSH user discovery ignores /home folders without matching system accounts

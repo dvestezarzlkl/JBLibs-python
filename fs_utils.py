@@ -268,7 +268,7 @@ def __lsblk_process_node(node:dict,parent:Optional[lsblkDiskInfo]=None,) -> Opti
             fstype=node.get('fstype', ''),
             uuid=node.get('uuid', ''),
             partuuid=node.get('partuuid', ''),
-            ptuuid=node.get('ptuuid', ''),
+            ptuuid=node.get('ptuuid', '') or (parent.ptuuid if parent else ''),
             mountpoints=node.get('mountpoints', []),
             parent=parent.name if parent else None,
             children=[]
@@ -409,32 +409,69 @@ def lsblk_list_disks(
     if isinstance(filterDev, str) and filterDevIsRegex:
         filterDev = re.compile(filterDev)
         
-    # lsblk -no NAME,LABEL,SIZE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS --json
-    old=False
-    o,r,e = runRet(
-        ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINTS,PTUUID"],
-        stdOutOnly=False
-    )
-    if r!=0:
-        if "unknown column" in e and "MOUNTPOINTS" in e:
-            # starší verze lsblk která nepodporuje MOUNTPOINTS ale jen MOUNTPOINT
-            o,r,e = runRet(
-                ["lsblk", "-J","-b", "-o", "NAME,LABEL,SIZE,TYPE,FSTYPE,UUID,PARTUUID,MOUNTPOINT,PTUUID"],
-                stdOutOnly=False
-            )
-            if r!=0:
-                raise lsblkError(f"lsblk command failed: {e.strip()}")
-            old=True
-        else:
-            raise lsblkError(f"lsblk command failed: {e.strip()}")
-    
+    # Modern lsblk exposes both MOUNTPOINTS and PTUUID. Older util-linux
+    # versions (for example Ubuntu 18.04) may expose only MOUNTPOINT and may
+    # not expose PTUUID at all. Degrade only unsupported columns; unrelated
+    # lsblk failures remain hard errors.
+    use_mountpoints = True
+    use_ptuuid = True
+    while True:
+        mount_column = "MOUNTPOINTS" if use_mountpoints else "MOUNTPOINT"
+        columns = [
+            "NAME", "LABEL", "SIZE", "TYPE", "FSTYPE", "UUID", "PARTUUID",
+            mount_column,
+        ]
+        if use_ptuuid:
+            columns.append("PTUUID")
+        o,r,e = runRet(
+            ["lsblk", "-J", "-b", "-o", ",".join(columns)],
+            stdOutOnly=False
+        )
+        if r == 0:
+            break
+
+        error = str(e or "")
+        error_upper = error.upper()
+        if "UNKNOWN COLUMN" in error_upper:
+            if use_mountpoints and "MOUNTPOINTS" in error_upper:
+                use_mountpoints = False
+                continue
+            if use_ptuuid and "PTUUID" in error_upper:
+                use_ptuuid = False
+                continue
+        raise lsblkError(f"lsblk command failed: {error.strip()}")
+
     data = json.loads(o)
-    if old:
-        # upravit data aby používala MOUNTPOINTS jako list
-        _fix_mountpoints(data.get('blockdevices', []))        
-    disks = __lsblk(data.get('blockdevices', []), None, ignoreSysDisks, mounted, filterDev, filterDevIsRegex)
+    nodes = data.get('blockdevices', [])
+    if not use_mountpoints:
+        _fix_mountpoints(nodes)
+    if not use_ptuuid:
+        _fill_ptuuid_from_blkid(nodes)
+
+    disks = __lsblk(nodes, None, ignoreSysDisks, mounted, filterDev, filterDevIsRegex)
     disk_dict = {disk.name: disk for disk in disks if disk.fstype != 'swap'}
     return disk_dict
+
+def _fill_ptuuid_from_blkid(nodes:List[dict]) -> None:
+    """Backfill whole-disk PTUUID when legacy lsblk cannot expose the column."""
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_type = str(node.get('type', '') or '')
+        name = str(node.get('name', '') or '').strip()
+        if node_type in ('disk', 'loop') and name:
+            output, returncode, _ = runRet(
+                ["blkid", "-p", "-s", "PTUUID", "-o", "value", normalizeDiskPath(name)],
+                stdOutOnly=False
+            )
+            if returncode == 0:
+                node['ptuuid'] = str(output or '').strip()
+        children = node.get('children', [])
+        if isinstance(children, list):
+            # Child partitions inherit the parent PTUUID in __lsblk_process_node.
+            for child in children:
+                if isinstance(child, dict) and node.get('ptuuid'):
+                    child.setdefault('ptuuid', node['ptuuid'])
 
 def _fix_mountpoints(nodes:List[dict]):
     for node in nodes:
