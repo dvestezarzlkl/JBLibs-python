@@ -50,5 +50,6 @@
       "new": "## fs_utils\n\n`lsblkDiskInfo.isSystemDisk` rozpoznává systémovou partition i její rodičovský disk podle child stromu a mountpointů `/`, `/boot` nebo `/boot/efi`.\n\n`lsblk_list_disks()` podporuje také starší util-linux bez sloupců `MOUNTPOINTS` nebo `PTUUID`; singular `MOUNTPOINT` normalizuje a chybějící whole-disk PTUUID read-only doplní přes `blkid`.\n",
       "expected": 1
     }
-  ]
+  ],
+  "note": "trigger legacy lsblk fallback patch"
 }
